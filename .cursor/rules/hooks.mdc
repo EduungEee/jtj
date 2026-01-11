@@ -1,0 +1,43 @@
+---
+globs: hooks/**/*.ts
+alwaysApply: false
+---
+
+커스텀 훅 파일은 다음 규칙을 준수합니다:
+
+1. 파일 명명 규칙:
+   - camelCase로 작성하며 'use' 접두사 필수 (예: useReports.ts)
+   - 테스트 파일은 훅 이름 + .test.ts (예: useReports.test.ts)
+   - 타입 파일은 훅 이름 + .types.ts (예: useReports.types.ts)
+
+2. 프로젝트 디렉토리 구조:
+   - hooks/: 커스텀 훅 파일들
+
+3. 코드 작성 규칙:
+   - 단일 책임 원칙을 준수합니다
+   - 입력 매개변수는 객체로 전달 (옵션 패턴)
+   - 반환값은 객체로 제공 (구조 분해 할당 용이성)
+   - 의존성 배열 규칙 준수 (useEffect, useCallback, useMemo)
+   - 조건부 훅 호출 금지 (React 규칙)
+
+4. 타입 정의:
+   - 입력 매개변수 인터페이스 정의 (예: UseReportsOptions)
+   - 반환값 인터페이스 정의 (예: UseReportsReturn)
+   - 제네릭 타입 활용 (재사용성 향상)
+   - 타입 가드 함수 적극 활용
+
+5. 에러 처리:
+   - try-catch로 에러 처리
+   - 에러 상태 포함 (error, isError)
+   - 로딩 상태 포함 (isLoading)
+   - 적절한 에러 메시지 제공
+
+6. 성능 최적화:
+   - 메모이제이션 적절히 활용
+   - 불필요한 리렌더링 방지
+   - 비동기 작업은 적절한 상태로 관리
+
+7. API 통신 훅:
+   - 보고서 목록 조회 훅
+   - 보고서 상세 조회 훅
+   - 이메일 가입 훅
