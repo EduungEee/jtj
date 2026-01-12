@@ -2,11 +2,10 @@ import { notFound } from "next/navigation";
 import { getReport } from "@/lib/api/reports";
 import { IndustrySection } from "@/components/industry-section";
 import { Navbar } from "@/components/navbar";
-import { OriginalNewsCard } from "@/components/original-news-card";
 import { ImpactedIndustriesGrid } from "@/components/impacted-industries-grid";
 import { RecommendedStocksSidebar } from "@/components/recommended-stocks-sidebar";
 import { ReportCTASection } from "@/components/report-cta-section";
-import { FiShare2, FiBookmark } from "react-icons/fi";
+import { FiShare2, FiBookmark, FiExternalLink } from "react-icons/fi";
 
 interface ReportPageProps {
   params: Promise<{ id: string }>;
@@ -48,7 +47,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
       <Navbar />
 
       {/* 메인 컨텐츠 */}
-      <main className="pt-20">
+      <main className="mt-20 sm:mt-30">
         {/* 상단 바 */}
         <div className="container mx-auto px-4 py-4">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -88,7 +87,44 @@ export default async function ReportPage({ params }: ReportPageProps) {
             <h1 className="text-4xl md:text-5xl font-bold mb-6 text-foreground">{report.title}</h1>
 
             {/* 요약 */}
-            {report.summary && <p className="text-lg text-muted-foreground leading-relaxed mb-8">{report.summary}</p>}
+            <div className="my-10">
+              <p className="text-lg text-muted-foreground leading-relaxed mb-4">
+                {/* 더미데이터로 UI 보여주기 */}
+                {"그러므로 우리는 이러한 상황에서 중요한 결정을 내려야 합니다. 또한 이러한 문제들은 복잡한 관계를 가지고 있으며, 서로 영향을 미치고 있습니다. 그러나 우리는 이러한 어려움을 극복할 수 있는 방법을 찾아야 합니다. 그리고 이러한 노력은 결국 좋은 결과를 가져다 줄 것입니다. 그러므로 우리는 계속해서 노력해야 하며, 포기하지 말아야 합니다. 또한 이러한 과정에서 우리는 많은 것을 배울 수 있으며, 성장할 수 있습니다. 그러나 때로는 실패할 수도 있지만, 그것도 우리에게는 중요한 경험이 될 것입니다. 그리고 이러한 경험들은 우리를 더욱 강하게 만들어 줄 것입니다. 그러므로 우리는 두려워하지 말고 앞으로 나아가야 합니다. 또한 우리는 서로 협력하며 함께 나아가야 하며, 혼자서는 해결할 수 없는 문제들도 함께하면 해결할 수 있습니다. 그러나 때로는 혼자서 생각할 시간도 필요하며, 그 시간을 통해 우리는 더 깊이 있는 통찰을 얻을 수 있습니다. 그리고 이러한 통찰은 우리의 결정을 더욱 명확하게 만들어 줄 것입니다. 그러므로 우리는 항상 열린 마음으로 새로운 아이디어를 받아들여야 하며, 변화에 적응할 수 있는 유연성을 가져야 합니다." ||
+                  report.summary}
+              </p>
+              <p className="text-lg text-muted-foreground leading-relaxed mb-4">
+                {/* 더미데이터로 UI 보여주기 */}
+                {"그러므로 우리는 이러한 상황에서 중요한 결정을 내려야 합니다. 또한 이러한 문제들은 복잡한 관계를 가지고 있으며, 서로 영향을 미치고 있습니다. 그러나 우리는 이러한 어려움을 극복할 수 있는 방법을 찾아야 합니다. 그리고 이러한 노력은 결국 좋은 결과를 가져다 줄 것입니다. 그러므로 우리는 계속해서 노력해야 하며, 포기하지 말아야 합니다. 또한 이러한 과정에서 우리는 많은 것을 배울 수 있으며, 성장할 수 있습니다. 그러나 때로는 실패할 수도 있지만, 그것도 우리에게는 중요한 경험이 될 것입니다. 그리고 이러한 경험들은 우리를 더욱 강하게 만들어 줄 것입니다. 그러므로 우리는 두려워하지 말고 앞으로 나아가야 합니다. 또한 우리는 서로 협력하며 함께 나아가야 하며, 혼자서는 해결할 수 없는 문제들도 함께하면 해결할 수 있습니다. 그러나 때로는 혼자서 생각할 시간도 필요하며, 그 시간을 통해 우리는 더 깊이 있는 통찰을 얻을 수 있습니다. 그리고 이러한 통찰은 우리의 결정을 더욱 명확하게 만들어 줄 것입니다. 그러므로 우리는 항상 열린 마음으로 새로운 아이디어를 받아들여야 하며, 변화에 적응할 수 있는 유연성을 가져야 합니다." ||
+                  report.summary}
+              </p>
+            </div>
+
+            {/* 참고 뉴스 링크 */}
+            {report.news_articles.length > 0 && (
+              <div className="mb-8">
+                <p className="text-xs text-muted-foreground mb-3">참고 뉴스:</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {report.news_articles.map((article) => (
+                    <div key={article.id} className="min-w-0">
+                      {article.url ? (
+                        <a
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary/80 hover:text-primary hover:underline inline-flex items-center gap-1 w-full"
+                        >
+                          <span className="truncate">{article.title}</span>
+                          <FiExternalLink className="w-3 h-3 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-primary/70 truncate block">{article.title}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -98,9 +134,6 @@ export default async function ReportPage({ params }: ReportPageProps) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* 왼쪽 열: 메인 콘텐츠 */}
               <div className="lg:col-span-2">
-                {/* 원본 뉴스 */}
-                {report.news_articles.length > 0 && <OriginalNewsCard article={report.news_articles[0]} />}
-
                 {/* 사회적 파급효과 분석 */}
                 {report.industries.length > 0 && (
                   <div className="mb-8">

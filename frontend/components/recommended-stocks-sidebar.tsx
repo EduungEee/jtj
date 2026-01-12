@@ -1,5 +1,6 @@
 import { Industry } from "@/lib/api/reports";
 import { StockCard } from "./stock-card";
+import { BsBarChart } from "react-icons/bs";
 
 interface RecommendedStocksSidebarProps {
   industries: Industry[];
@@ -20,20 +21,7 @@ export function RecommendedStocksSidebar({ industries }: RecommendedStocksSideba
   return (
     <div className="sticky top-20">
       <div className="flex items-center gap-2 mb-4">
-        <svg
-          className="w-5 h-5 text-primary"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-          />
-        </svg>
+        <BsBarChart className="text-primary size-5 flex items-center justify-center" />
         <h2 className="text-xl font-semibold text-foreground">추천 종목</h2>
       </div>
       <div>
