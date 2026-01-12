@@ -48,7 +48,7 @@ npm run dev
 # 4. 접속
 # Frontend: http://localhost:3000
 # Backend API (Swagger): http://localhost:8000/docs
-# 데이터베이스 관리: http://localhost:8080 (Adminer)
+# 데이터베이스 관리: http://localhost:8081 (PgWeb)
 ```
 
 ## 📝 API 엔드포인트

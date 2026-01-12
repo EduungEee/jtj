@@ -30,15 +30,15 @@ services:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  adminer:
-    image: adminer:latest
+  pgweb:
+    image: sosedoff/pgweb:latest
     ports:
-      - "8080:8080"
+      - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      ADMINER_DEFAULT_SERVER: postgres
+      - PGWEB_DATABASE_URL=postgres://postgres:postgres@postgres:5432/stock_analysis?sslmode=disable
 
 volumes:
   postgres_data:
