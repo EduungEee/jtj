@@ -1,32 +1,67 @@
+import { FiStar, FiArrowRight, FiTrendingUp, FiBarChart2 } from "react-icons/fi";
+
 /**
  * Hero 섹션 컴포넌트
  * 홈페이지 상단의 주요 가입 유도 섹션
- * Magic UI 효과 포함
  */
 export function HeroSection() {
   return (
-    <section className="relative mb-16 text-center py-20 px-4 bg-gradient-to-b from-background via-background/95 to-background rounded-lg overflow-hidden">
-      {/* Magic UI: Background particles effect */}
-      <div className="absolute inset-0 opacity-30 pointer-events-none">
-        <div className="absolute top-10 left-10 w-2 h-2 rounded-full bg-primary/40 animate-pulse" style={{ animationDelay: '0s' }} />
-        <div className="absolute top-20 right-20 w-1.5 h-1.5 rounded-full bg-primary/30 animate-pulse" style={{ animationDelay: '0.5s' }} />
-        <div className="absolute bottom-20 left-1/4 w-2.5 h-2.5 rounded-full bg-primary/20 animate-pulse" style={{ animationDelay: '1s' }} />
-        <div className="absolute bottom-10 right-1/3 w-1 h-1 rounded-full bg-primary/40 animate-pulse" style={{ animationDelay: '1.5s' }} />
-      </div>
+    <section className="relative mb-16 text-center py-12 px-4">
+      <div className="max-w-4xl mx-auto">
+        {/* 서비스 태그 */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-8 bg-pink-50 border border-red-200 rounded-full">
+          <FiStar className="w-4 h-4 text-red-500" />
+          <span className="text-sm font-medium text-red-600">AI 기반 주식 분석 서비스</span>
+        </div>
 
-      {/* Content */}
-      <div className="relative z-10">
-        <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 text-foreground bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-          매일 업데이트되는 주식 분석 보고서
-        </h2>
-        <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-          최신 뉴스를 AI로 분석하여 유망 산업과 주식을 파악하세요
+        {/* 메인 제목 */}
+        <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
+          <span className="text-foreground">뉴스로 예측하는</span>
+          <br />
+          <span className="text-primary">내일의 주식 시장</span>
+        </h1>
+
+        {/* 설명 텍스트 */}
+        <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
+          AI가 최신 뉴스를 분석하여 사회적 파급효과를 예측하고, 영향받는 산업과 유망 주식을 알려드립니다. 매일 아침, 맞춤형 분석 보고서를 받아보세요.
         </p>
-        <button className="relative px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
-          <span className="relative z-10">무료로 시작하기</span>
-          {/* Shimmer effect */}
-          <span className="absolute inset-0 rounded-lg bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full animate-shimmer-slide" />
-        </button>
+
+        {/* CTA 버튼 */}
+        <div className="mb-4">
+          <button className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
+            <span>회원가입하기</span>
+            <FiArrowRight className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* 서브 텍스트 */}
+        <p className="text-sm text-muted-foreground mb-16">
+          무료로 시작하기 · 신용카드 필요 없음
+        </p>
+
+        {/* 통계 섹션 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-border">
+          {/* 분석된 뉴스 */}
+          <div className="flex flex-col items-center">
+            <FiTrendingUp className="w-8 h-8 text-primary mb-3" />
+            <div className="text-4xl font-bold text-foreground mb-1">1,200+</div>
+            <div className="text-sm text-muted-foreground">분석된 뉴스</div>
+          </div>
+
+          {/* 예측 정확도 */}
+          <div className="flex flex-col items-center">
+            <FiBarChart2 className="w-8 h-8 text-primary mb-3" />
+            <div className="text-4xl font-bold text-foreground mb-1">85%</div>
+            <div className="text-sm text-muted-foreground">예측 정확도</div>
+          </div>
+
+          {/* 구독자 수 */}
+          <div className="flex flex-col items-center">
+            <FiStar className="w-8 h-8 text-primary mb-3" />
+            <div className="text-4xl font-bold text-foreground mb-1">5,000+</div>
+            <div className="text-sm text-muted-foreground">구독자 수</div>
+          </div>
+        </div>
       </div>
     </section>
   );
