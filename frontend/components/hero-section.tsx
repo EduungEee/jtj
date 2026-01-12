@@ -6,7 +6,7 @@ import { FiStar, FiArrowRight, FiTrendingUp, FiBarChart2 } from "react-icons/fi"
  */
 export function HeroSection() {
   return (
-    <section id="service-intro" className="container mx-auto px-4 py-16">
+    <section id="service-intro" className="container mx-auto px-4 py-16 scroll-mt-20">
       <div className="max-w-4xl mx-auto text-center">
         {/* 서비스 태그 */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-8 bg-pink-50 border border-red-200 rounded-full">

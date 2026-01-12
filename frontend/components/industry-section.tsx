@@ -1,5 +1,4 @@
 import { Industry } from "@/lib/api/reports";
-import { StockCard } from "./stock-card";
 
 interface IndustrySectionProps {
   industry: Industry;
@@ -12,69 +11,43 @@ export function IndustrySection({ industry }: IndustrySectionProps) {
   const getImpactBadgeColor = (level: string | null) => {
     switch (level) {
       case "high":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+        return "bg-red-100 text-red-700";
       case "medium":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+        return "bg-gray-100 text-gray-700";
       case "low":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+        return "bg-green-100 text-green-700";
       default:
-        return "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200";
+        return "bg-muted text-muted-foreground";
     }
   };
 
-  const getTrendBadgeColor = (trend: string | null) => {
-    switch (trend) {
-      case "positive":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-      case "negative":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+  const getImpactText = (level: string | null) => {
+    switch (level) {
+      case "high":
+        return "높은 영향";
+      case "medium":
+        return "중간 영향";
+      case "low":
+        return "낮은 영향";
       default:
-        return "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200";
+        return "영향";
     }
   };
 
   return (
-    <div className="p-6 border rounded-lg bg-white dark:bg-slate-900">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-2">{industry.industry_name}</h3>
-          <div className="flex gap-2 flex-wrap">
-            {industry.impact_level && (
-              <span
-                className={`px-3 py-1 rounded-full text-xs font-medium ${getImpactBadgeColor(industry.impact_level)}`}
-              >
-                영향도:{" "}
-                {industry.impact_level === "high" ? "높음" : industry.impact_level === "medium" ? "보통" : "낮음"}
-              </span>
-            )}
-            {industry.trend_direction && (
-              <span
-                className={`px-3 py-1 rounded-full text-xs font-medium ${getTrendBadgeColor(industry.trend_direction)}`}
-              >
-                {industry.trend_direction === "positive"
-                  ? "긍정적"
-                  : industry.trend_direction === "negative"
-                  ? "부정적"
-                  : "중립"}
-              </span>
-            )}
-          </div>
-        </div>
+    <div className="p-6 bg-white rounded-lg border shadow-sm mb-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-bold text-foreground">{industry.industry_name}</h3>
+        {industry.impact_level && (
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-semibold ${getImpactBadgeColor(industry.impact_level)}`}
+          >
+            {getImpactText(industry.impact_level)}
+          </span>
+        )}
       </div>
       {industry.impact_description && (
-        <p className="text-slate-600 dark:text-slate-400 mb-4">{industry.impact_description}</p>
-      )}
-      {industry.stocks.length > 0 && (
-        <div>
-          <h4 className="font-semibold text-slate-900 dark:text-slate-50 mb-3">
-            관련 주식 ({industry.stocks.length}개)
-          </h4>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {industry.stocks.map((stock) => (
-              <StockCard key={stock.id} stock={stock} />
-            ))}
-          </div>
-        </div>
+        <p className="text-muted-foreground leading-relaxed">{industry.impact_description}</p>
       )}
     </div>
   );

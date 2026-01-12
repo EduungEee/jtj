@@ -20,7 +20,7 @@ export function Navbar() {
   const navItems = [
     { label: "오늘의 보고서", href: "#today-reports" },
     { label: "서비스 소개", href: "#service-intro" },
-    { label: "기능란", href: "#features" },
+    { label: "어떻게 작동하나요?", href: "#features" },
   ];
 
   useEffect(() => {
@@ -148,7 +148,7 @@ export function Navbar() {
               <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shrink-0">
                 <HiArrowTrendingUp className="w-6 h-6 text-primary-foreground" />
               </div>
-              <span className="text-xl font-bold text-foreground">StockPulse</span>
+              <span className="text-xl font-bold text-foreground">MarketReport</span>
             </a>
 
             {/* Desktop Navigation */}
@@ -189,10 +189,10 @@ export function Navbar() {
           </div>
 
           {/* Mobile Menu with GSAP animation */}
-          <div ref={menuRef} className="md:hidden mt-4 pb-4 overflow-hidden" style={{ height: 0, opacity: 0 }}>
+          <div ref={menuRef} className="md:hidden overflow-hidden" style={{ height: 0, opacity: 0 }}>
             <div
               ref={menuContentRef}
-              className="flex flex-col gap-2 bg-white/60 backdrop-blur-md rounded-lg p-4 border border-white/20 shadow-lg"
+              className="flex mt-4 pb-4  flex-col gap-2 bg-white/60 backdrop-blur-md rounded-lg p-4 border border-white/20 shadow-lg"
             >
               {navItems.map((item, index) => (
                 <a

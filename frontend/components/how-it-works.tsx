@@ -7,7 +7,7 @@ import { FiFileText, FiZap, FiFile, FiMail } from "react-icons/fi";
  */
 export function HowItWorks() {
   return (
-    <section id="features" className="container mx-auto px-4 py-16">
+    <section id="features" className="container mx-auto px-4 py-16 scroll-mt-20">
       <div className="max-w-4xl mx-auto text-center mb-12">
         <h2 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">어떻게 작동하나요?</h2>
         <p className="text-lg text-muted-foreground">AI가 뉴스를 분석하여 투자 인사이트를 제공하는 4단계 프로세스</p>
