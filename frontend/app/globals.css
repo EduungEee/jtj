@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@theme {
+  --color-primary: oklch(var(--primary));
+  --color-primary-10: oklch(var(--primary) / 0.1);
+  --color-primary-20: oklch(var(--primary) / 0.2);
+  --color-primary-30: oklch(var(--primary) / 0.3);
+  --color-primary-40: oklch(var(--primary) / 0.4);
+  --color-primary-50: oklch(var(--primary) / 0.5);
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

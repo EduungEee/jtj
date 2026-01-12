@@ -37,8 +37,8 @@ async function ReportList() {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {reports.map((report) => (
+    <div className="grid gap-6 md:grid-cols-2">
+      {reports.slice(0, 4).map((report) => (
         <ReportCard key={report.id} report={report} />
       ))}
     </div>
