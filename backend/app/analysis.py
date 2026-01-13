@@ -44,18 +44,18 @@ print(f"   - 검증 엔진: OpenAI GPT-4o-mini")
 
 class StockInfo(BaseModel):
     """1차 수혜주 정보"""
-    code: str = Field(description="종목코드 6자리", regex=r"^\d{6}$")
+    code: str = Field(description="종목코드 6자리", pattern=r"^\d{6}$")
     name: str = Field(description="종목명")
     reason: str = Field(description="수혜 이유")
     confidence_score: float = Field(default=50.0, ge=0, le=100)
-    expected_trend: str = Field(default="up", regex="^(up|down|neutral)$")
+    expected_trend: str = Field(default="up", pattern="^(up|down|neutral)$")
 
 class SideEffectInfo(BaseModel):
     """2차 파급효과 정보"""
     sector: str = Field(description="파급 섹터 (= 산업명)")
     logic: str = Field(description="파급 논리")
-    impact_level: str = Field(default="medium", regex="^(high|medium|low)$")
-    trend_direction: str = Field(default="positive", regex="^(positive|negative|neutral)$")
+    impact_level: str = Field(default="medium", pattern="^(high|medium|low)$")
+    trend_direction: str = Field(default="positive", pattern="^(positive|negative|neutral)$")
     related_stocks: List[StockInfo] = Field(default_factory=list)
 
 class NewsAnalysisOutput(BaseModel):
@@ -765,6 +765,111 @@ def analyze_and_save(
         news_articles=news_articles,
         analysis_date=analysis_date
     )
+
+
+def analyze_news_from_vector_db(
+    db: Session,
+    start_datetime: Optional[datetime] = None,
+    end_datetime: Optional[datetime] = None,
+    analysis_date: Optional[date] = None
+) -> Report:
+    """
+    벡터 DB에서 날짜 범위로 뉴스를 조회하고, AI 분석을 수행하여 보고서를 생성합니다.
+    
+    Args:
+        db: 데이터베이스 세션
+        start_datetime: 시작 날짜/시간 (기본값: 전날 06:00:00)
+        end_datetime: 종료 날짜/시간 (기본값: 현재 시간)
+        analysis_date: 분석 날짜 (기본값: 오늘)
+    
+    Returns:
+        생성된 Report 객체
+    
+    Raises:
+        ValueError: 뉴스가 없거나 분석 실패 시
+    """
+    from datetime import timedelta
+    import pytz
+    
+    # 한국 시간대 설정
+    seoul_tz = pytz.timezone('Asia/Seoul')
+    now = datetime.now(seoul_tz)
+    
+    # 기본값 설정: 전날 06:00 ~ 현재 시간
+    if end_datetime is None:
+        end_datetime = now
+    else:
+        if end_datetime.tzinfo is None:
+            end_datetime = seoul_tz.localize(end_datetime)
+    
+    if start_datetime is None:
+        yesterday = (now - timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+        start_datetime = yesterday
+    else:
+        if start_datetime.tzinfo is None:
+            start_datetime = seoul_tz.localize(start_datetime)
+    
+    if analysis_date is None:
+        analysis_date = date.today()
+    
+    # 벡터 DB에서 뉴스 조회 (날짜 범위로)
+    # metadata의 published_date를 기준으로 조회
+    from sqlalchemy import text
+    
+    try:
+        sqlalchemy_conn = db.connection()
+        raw_conn = None
+        if hasattr(sqlalchemy_conn, 'connection'):
+            raw_conn = sqlalchemy_conn.connection
+            if hasattr(raw_conn, 'driver_connection'):
+                raw_conn = raw_conn.driver_connection
+        else:
+            raw_conn = sqlalchemy_conn
+        
+        cursor = raw_conn.cursor()
+        
+        try:
+            start_str = start_datetime.isoformat()
+            end_str = end_datetime.isoformat()
+            
+            cursor.execute("""
+                SELECT id FROM news_articles
+                WHERE metadata IS NOT NULL
+                AND metadata->>'published_date' IS NOT NULL
+                AND (
+                    (metadata->>'published_date')::timestamp >= %s::timestamp
+                    AND (metadata->>'published_date')::timestamp <= %s::timestamp
+                )
+                ORDER BY (metadata->>'published_date')::timestamp DESC
+                LIMIT 20
+            """, (start_str, end_str))
+            
+            article_ids = [row[0] for row in cursor.fetchall()]
+            news_articles = db.query(NewsArticle).filter(NewsArticle.id.in_(article_ids)).all() if article_ids else []
+            
+            print(f"✅ 벡터 DB에서 뉴스 조회 완료: {len(news_articles)}개 (기간: {start_datetime.strftime('%Y-%m-%d %H:%M')} ~ {end_datetime.strftime('%Y-%m-%d %H:%M')})")
+        finally:
+            cursor.close()
+        
+    except Exception as e:
+        import traceback
+        print(f"⚠️  벡터 DB 뉴스 조회 실패: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise ValueError(f"벡터 DB에서 뉴스를 조회할 수 없습니다: {e}")
+    
+    if not news_articles:
+        raise ValueError(f"조회된 뉴스 기사가 없습니다. (기간: {start_datetime} ~ {end_datetime})")
+    
+    # 분석 및 저장
+    report = analyze_news_with_langgraph(
+        db=db,
+        news_articles=news_articles,
+        analysis_date=analysis_date
+    )
+    
+    print(f"✅ 벡터 DB 기반 분석 완료: 보고서 ID={report.id}, 뉴스 {len(news_articles)}개 분석")
+    
+    return report
 
 
 # ==================== 한국투자증권 API 함수 ====================
