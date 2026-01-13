@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.database import engine, Base
-from app.routers import health, analyze, reports
+from app.routers import health, analyze, reports, news
 import sys
 import os
 
@@ -54,6 +54,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(analyze.router, prefix="/api", tags=["analyze"])
 app.include_router(reports.router, prefix="/api", tags=["reports"])
+app.include_router(news.router, prefix="/api", tags=["news"])
 
 @app.get("/")
 async def root():

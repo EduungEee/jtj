@@ -25,7 +25,7 @@ graph TB
     end
 
     subgraph "External APIs"
-        NaverAPI[네이버 뉴스 API]
+        NewsDataAPI[NewsData.io API]
         OpenAIAPI[OpenAI API]
     end
 
@@ -53,7 +53,7 @@ graph TB
     APIClient -->|HTTP/REST| FastAPI
     FastAPI --> Routers
     Routers --> Services
-    Services -->|뉴스 수집| NaverAPI
+    Services -->|뉴스 수집| NewsDataAPI
     Services -->|AI 분석| OpenAIAPI
     Services -->|데이터 저장/조회| PostgreSQL
     Adminer -->|관리| PostgreSQL
@@ -74,14 +74,14 @@ graph TB
 sequenceDiagram
     participant Scheduler as 스케줄러
     participant Backend as FastAPI Backend
-    participant Naver as 네이버 뉴스 API
+    participant NewsData as NewsData.io API
     participant DB as PostgreSQL (pgvector)
 
     Note over Scheduler: 매시간 자동 실행
     Scheduler->>Backend: POST /api/get_news 호출
-    Backend->>Naver: 최신 뉴스 URL 수집
-    Naver-->>Backend: 뉴스 URL 목록
-    Backend->>Backend: 각 URL에서 meta title, description 추출
+    Backend->>NewsData: 최신 뉴스 데이터 수집
+    NewsData-->>Backend: 뉴스 데이터 목록
+    Backend->>Backend: 뉴스 데이터에서 title, description 추출
     Backend->>DB: 뉴스 기사 저장 (관계형 DB)
     Backend->>Backend: 벡터 임베딩 생성 (meta description 기반)
     Backend->>DB: 벡터 데이터 저장 (pgvector, metadata 포함)
@@ -209,7 +209,7 @@ graph TB
         end
     end
 
-    GetNews -->|네이버 API| Naver[네이버 뉴스 API]
+    GetNews -->|NewsData.io API| NewsData[NewsData.io API]
     GetNews -->|저장| DB1[(PostgreSQL<br/>+ pgvector)]
     NewsList -->|조회| DB1
     Analyze -->|벡터 DB 조회| DB1
@@ -366,9 +366,9 @@ graph TB
     Adminer --> PostgreSQL
 
     FastAPI --> APScheduler
-    APScheduler --> Naver
+    APScheduler --> NewsData
     APScheduler --> OpenAI
-    FastAPI --> Naver
+    FastAPI --> NewsData
     FastAPI --> OpenAI
     FastAPI --> SendGrid
     FastAPI --> Resend
@@ -386,12 +386,12 @@ graph TB
 ```mermaid
 flowchart TD
     Start([스케줄러: 매시간<br/>POST /api/get_news]) --> Collect[뉴스 수집]
-    Collect --> NaverAPI[네이버 API 호출<br/>최신 뉴스 URL 수집]
-    NaverAPI -->|성공| Extract[meta title, description 추출]
-    NaverAPI -->|실패| Error1[에러 로깅]
+    Collect --> NewsDataAPI[NewsData.io API 호출<br/>최신 뉴스 데이터 수집]
+    NewsDataAPI -->|성공| Extract[title, description 추출]
+    NewsDataAPI -->|실패| Error1[에러 로깅]
     
     Extract --> SaveNews[관계형 DB 저장]
-    SaveNews --> Embedding[벡터 임베딩 생성<br/>(meta description 기반)]
+    SaveNews --> Embedding[벡터 임베딩 생성<br/>(description 기반)]
     Embedding --> SaveVector[pgvector에 저장<br/>(metadata 포함)]
     SaveVector --> Success1[수집 완료]
     
@@ -525,7 +525,7 @@ graph TB
     end
 
     subgraph "External Services"
-        NaverAPI[네이버 API<br/>openapi.naver.com]
+        NewsDataAPI[NewsData.io API<br/>newsdata.io]
         OpenAIAPI[OpenAI API<br/>api.openai.com]
         EmailAPI[이메일 API<br/>SendGrid/Resend]
     end
@@ -533,7 +533,7 @@ graph TB
     NextJS <-->|HTTP/REST| FastAPI
     FastAPI <-->|SQL| PostgreSQL
     Adminer <-->|SQL| PostgreSQL
-    FastAPI <-->|HTTPS| NaverAPI
+    FastAPI <-->|HTTPS| NewsDataAPI
     FastAPI <-->|HTTPS| OpenAIAPI
     FastAPI <-->|HTTPS| EmailAPI
 ```
@@ -558,7 +558,7 @@ graph LR
         SQLAlchemy --> PostgreSQL
         PostgreSQL --> pgvector
         Requests --> OpenAI
-        Requests --> NaverAPI
+        Requests --> NewsDataAPI
     end
 ```
 
@@ -580,7 +580,7 @@ graph TB
         Email[이메일 API<br/>SendGrid/Resend]
     end
 
-    Backend --> Naver
+    Backend --> NewsData
     Backend --> OpenAI
     Backend --> Email
     Backend --> DB

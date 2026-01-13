@@ -1,6 +1,6 @@
 """
 뉴스 수집 모듈
-네이버 뉴스 API를 사용하여 최신 뉴스를 수집합니다.
+newsdata.io API를 사용하여 최신 뉴스를 수집합니다.
 """
 import os
 import requests
@@ -9,180 +9,140 @@ from typing import List
 from sqlalchemy.orm import Session
 import sys
 import os as os_module
-import html
-from urllib.parse import quote
 
 # models 경로 추가
-backend_path = os_module.path.dirname(os_module.path.dirname(os_module.path.abspath(__file__)))
+backend_path = os_module.path.dirname(os_module.path.dirname(os.path.abspath(__file__)))
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
 from models.models import NewsArticle
 
-NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
-NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NAVER_NEWS_API_URL = "https://openapi.naver.com/v1/search/news.json"
+NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY")
+NEWSDATA_API_URL = "https://newsdata.io/api/1/latest"
 
 
-def fetch_news_from_api(query: str = "주식", count: int = 10) -> List[dict]:
+def fetch_news_from_api(query: str = "주식", size: int = 10) -> List[dict]:
     """
-    네이버 뉴스 API에서 최신 뉴스를 가져옵니다.
+    newsdata.io API에서 최신 뉴스를 가져옵니다.
     
     Args:
-        query: 검색 쿼리 (UTF-8 인코딩됨)
-        count: 가져올 뉴스 개수 (1-100, 기본값: 10개)
+        query: 검색 쿼리 (기본값: "주식")
+        size: 가져올 뉴스 개수 (1-10, 기본값: 10개, 무료 티어 제한)
     
     Returns:
         뉴스 기사 리스트
     """
-    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-        raise ValueError("NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET 환경 변수가 설정되지 않았습니다.")
+    if not NEWSDATA_API_KEY:
+        raise ValueError("NEWSDATA_API_KEY 환경 변수가 설정되지 않았습니다.")
     
-    # count 범위 검증 (네이버 API: 1-100)
-    if count < 1 or count > 100:
-        raise ValueError(f"count는 1-100 사이의 값이어야 합니다. 현재 값: {count}")
+    # size 범위 검증 (newsdata.io API 무료 티어: 1-10)
+    if size < 1 or size > 10:
+        raise ValueError(f"size는 1-10 사이의 값이어야 합니다. (무료 티어 제한) 현재 값: {size}")
     
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-    }
-    
-    # 네이버 API 파라미터 설정
-    # query는 requests가 자동으로 URL 인코딩하지만, UTF-8 문자열이어야 함
+    # newsdata.io API 파라미터 설정 (한국 관련 뉴스)
     params = {
-        "query": query,  # UTF-8 문자열 (requests가 자동 인코딩)
-        "display": count,  # 1-100 범위
-        "sort": "date",  # "sim" (정확도순) 또는 "date" (날짜순, 최신순)
-        "start": 1  # 검색 시작 위치 (1-1000, 기본값: 1)
+        "apikey": NEWSDATA_API_KEY,
+        "q": query,
+        "country": "kr",  # 한국
+        "language": "ko",  # 한국어
+        "timezone": "asia/seoul",  # 한국 시간대 (소문자)
+        "image": 0,  # 이미지 제외
+        "video": 0,  # 비디오 제외
+        "removeduplicate": 1,  # 중복 제거
+        "size": size,  # 가져올 뉴스 개수
+        # full_content는 무료 티어에서 지원하지 않으므로 제거
     }
     
     try:
-        print(f"네이버 뉴스 API 호출: query={query}, display={count}, sort=date")
-        response = requests.get(NAVER_NEWS_API_URL, headers=headers, params=params, timeout=10)
+        print(f"newsdata.io API 호출: query={query}, size={size}")
+        print(f"요청 파라미터: {params}")
+        response = requests.get(NEWSDATA_API_URL, params=params, timeout=10)
         
         # 응답 상태 확인
         print(f"응답 상태 코드: {response.status_code}")
+        print(f"요청 URL: {response.url}")
         
-        # 오류 응답 처리
-        if response.status_code == 400:
-            error_text = response.text
-            print(f"❌ 네이버 API 400 오류")
-            print(f"요청 URL: {response.url}")
-            print(f"요청 파라미터: {params}")
-            print(f"응답 내용: {error_text}")
-            
-            # XML 형식 오류 파싱 시도
+        # 422 에러인 경우 상세 응답 로깅
+        if response.status_code == 422:
             try:
-                import xml.etree.ElementTree as ET
-                root = ET.fromstring(error_text)
-                error_code = root.find('.//errorCode')
-                error_message = root.find('.//errorMessage')
-                if error_code is not None and error_message is not None:
-                    print(f"오류 코드: {error_code.text}")
-                    print(f"오류 메시지: {error_message.text}")
-                    raise ValueError(f"네이버 API 오류 ({error_code.text}): {error_message.text}")
-            except ET.ParseError:
-                # JSON 형식일 수도 있음
-                try:
-                    error_json = response.json()
-                    print(f"오류 상세 (JSON): {error_json}")
-                except:
-                    pass
-            
-            raise ValueError(f"네이버 API 400 오류: {error_text}")
-        
-        if response.status_code == 403:
-            error_text = response.text
-            print(f"❌ 네이버 API 403 오류 (권한 없음)")
-            print(f"응답 내용: {error_text}")
-            raise ValueError(
-                "네이버 API 권한이 없습니다.\n"
-                "1. 네이버 개발자 센터(https://developers.naver.com) 접속\n"
-                "2. 내 애플리케이션 > API 설정 탭\n"
-                "3. '검색' API가 체크되어 있는지 확인"
-            )
+                error_data = response.json()
+                print(f"422 에러 상세 응답: {error_data}")
+                error_message = error_data.get("message", "파라미터 오류")
+                raise ValueError(f"newsdata.io API 파라미터 오류: {error_message}")
+            except:
+                print(f"422 에러 응답 텍스트: {response.text}")
+                raise ValueError(f"newsdata.io API 파라미터 오류: {response.text}")
         
         response.raise_for_status()
         data = response.json()
         
-        print(f"API 응답 성공: 총 {data.get('total', 0)}개 결과, {len(data.get('items', []))}개 반환")
+        # newsdata.io API 응답 형식 확인
+        if data.get("status") != "success":
+            error_message = data.get("message", "알 수 없는 오류")
+            raise ValueError(f"newsdata.io API 오류: {error_message}")
+        
+        total_results = data.get("totalResults", 0)
+        results = data.get("results", [])
+        
+        print(f"API 응답 성공: 총 {total_results}개 결과, {len(results)}개 반환")
         
         articles = []
-        if "items" in data:
-            for item in data.get("items", []):
-                # HTML 태그 제거 및 디코딩
-                title = html.unescape(item.get("title", "").replace("<b>", "").replace("</b>", ""))
-                description = html.unescape(item.get("description", "").replace("<b>", "").replace("</b>", ""))
-                
-                # pubDate 파싱 (RFC 2822 형식: "Mon, 26 Sep 2016 07:50:00 +0900")
-                published_at = None
-                pub_date_str = item.get("pubDate", "")
-                if pub_date_str:
+        for item in results:
+            title = item.get("title", "")
+            description = item.get("description", "")
+            url = item.get("link", "")
+            source_id = item.get("source_id", "")
+            
+            # pubDate 파싱 (ISO 8601 형식 또는 다른 형식)
+            published_at = None
+            pub_date_str = item.get("pubDate", "")
+            if pub_date_str:
+                try:
+                    # ISO 8601 형식 파싱 시도
+                    # 예: "2024-01-15T10:30:00Z" 또는 "2024-01-15T10:30:00+09:00"
+                    published_at = datetime.fromisoformat(pub_date_str.replace("Z", "+00:00"))
+                except ValueError:
                     try:
-                        # RFC 2822 형식 파싱 (네이버 API 표준 형식)
-                        # 예: "Mon, 26 Sep 2016 07:50:00 +0900"
+                        # RFC 2822 형식 시도
                         published_at = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %z")
                     except ValueError:
                         try:
-                            # 다른 형식 시도 (타임존 없음)
-                            published_at = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S")
-                        except ValueError:
-                            try:
-                                # YYYY-MM-DD 형식
-                                published_at = datetime.strptime(pub_date_str, "%Y-%m-%d %H:%M:%S")
-                            except:
-                                print(f"날짜 파싱 실패: {pub_date_str}")
-                                pass
-                
-                # originallink가 있으면 사용, 없으면 link 사용
-                url = item.get("originallink") or item.get("link", "")
-                
-                # source 추출 (originallink의 도메인)
-                source = ""
-                if item.get("originallink"):
-                    try:
-                        from urllib.parse import urlparse
-                        parsed = urlparse(item.get("originallink"))
-                        source = parsed.netloc.replace("www.", "")
-                    except:
-                        source = ""
-                
-                articles.append({
-                    "title": title,
-                    "content": description,  # 네이버 API는 본문이 아닌 요약만 제공
-                    "source": source,
-                    "url": url,
-                    "published_at": published_at
-                })
+                            # 다른 형식 시도
+                            published_at = datetime.strptime(pub_date_str, "%Y-%m-%d %H:%M:%S")
+                        except:
+                            print(f"날짜 파싱 실패: {pub_date_str}")
+                            pass
+            
+            articles.append({
+                "title": title,
+                "content": description,  # description을 content로 사용
+                "source": source_id,  # source_id를 source로 사용
+                "url": url,
+                "published_at": published_at
+            })
         
         print(f"파싱된 뉴스 기사: {len(articles)}개")
         return articles
     except requests.exceptions.HTTPError as e:
         import traceback
-        print(f"네이버 뉴스 API HTTP 오류: {e}")
+        print(f"newsdata.io API HTTP 오류: {e}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"응답 상태 코드: {e.response.status_code}")
             print(f"응답 헤더: {dict(e.response.headers)}")
-            print(f"응답 내용: {e.response.text}")
-            
-            # 네이버 API 오류 코드 파싱 시도
             try:
-                import xml.etree.ElementTree as ET
-                root = ET.fromstring(e.response.text)
-                error_code = root.find('.//errorCode')
-                error_message = root.find('.//errorMessage')
-                if error_code is not None and error_message is not None:
-                    print(f"네이버 오류 코드: {error_code.text}")
-                    print(f"네이버 오류 메시지: {error_message.text}")
+                error_data = e.response.json()
+                print(f"응답 내용: {error_data}")
+                error_message = error_data.get("message", "알 수 없는 오류")
+                raise ValueError(f"newsdata.io API 오류 ({e.response.status_code}): {error_message}")
             except:
-                pass
+                print(f"응답 내용: {e.response.text}")
         print(f"Traceback: {traceback.format_exc()}")
-        raise  # ValueError로 변환하여 상위로 전달
+        raise ValueError(f"newsdata.io API 요청 실패: {str(e)}")
     except requests.exceptions.RequestException as e:
         import traceback
-        print(f"네이버 뉴스 API 요청 실패: {e}")
+        print(f"newsdata.io API 요청 실패: {e}")
         print(f"Traceback: {traceback.format_exc()}")
-        raise ValueError(f"네이버 뉴스 API 요청 실패: {str(e)}")
+        raise ValueError(f"newsdata.io API 요청 실패: {str(e)}")
 
 
 def save_news_to_db(db: Session, articles: List[dict]) -> List[NewsArticle]:
@@ -229,14 +189,14 @@ def save_news_to_db(db: Session, articles: List[dict]) -> List[NewsArticle]:
     return saved_articles
 
 
-def collect_news(db: Session, query: str = "주식", count: int = 10) -> List[NewsArticle]:
+def collect_news(db: Session, query: str = "주식", size: int = 10) -> List[NewsArticle]:
     """
     뉴스를 수집하고 데이터베이스에 저장합니다.
     
     Args:
         db: 데이터베이스 세션
         query: 검색 쿼리
-        count: 가져올 뉴스 개수 (기본값: 10개)
+        size: 가져올 뉴스 개수 (기본값: 10개, 무료 티어 제한)
     
     Returns:
         저장된 NewsArticle 객체 리스트
@@ -246,7 +206,7 @@ def collect_news(db: Session, query: str = "주식", count: int = 10) -> List[Ne
     """
     try:
         # API에서 뉴스 가져오기
-        articles = fetch_news_from_api(query=query, count=count)
+        articles = fetch_news_from_api(query=query, size=size)
         
         if not articles:
             raise ValueError(f"'{query}' 검색어로 뉴스를 찾을 수 없습니다. 다른 검색어를 시도해주세요.")

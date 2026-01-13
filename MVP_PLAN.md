@@ -8,8 +8,8 @@
 
 ## 🎯 핵심 기능 (MVP)
 
-1. ✅ **자동 뉴스 수집**: 1시간마다 네이버 뉴스 API로 최신 뉴스 수집
-   - meta description 데이터만 추출
+1. ✅ **자동 뉴스 수집**: 1시간마다 newsdata.io API로 최신 뉴스 수집
+   - title, description 데이터 추출
    - pgvector와 PostgreSQL에 각각 저장
 2. ✅ **Vector DB 저장**: 수집된 뉴스의 meta description을 pgvector를 사용하여 PostgreSQL에 벡터 저장
 3. ✅ **자동 AI 분석**: 매일 아침 6시에 보고서 생성
@@ -54,19 +54,19 @@
 
 **목표**: 자동 뉴스 수집 및 Vector DB 저장 파이프라인
 
-- [ ] 뉴스 API 연동 (`app/news.py`)
-  - [ ] 네이버 뉴스 API 연동 (최신 뉴스 URL 가져오기)
-  - [ ] 각 뉴스 URL에서 meta title, description 추출 함수
-  - [ ] 뉴스 저장 함수 (meta title, description 포함)
-- [ ] 뉴스 수집 API 엔드포인트 (`routers/news.py`)
-  - [ ] `POST /api/get_news` 엔드포인트 구현 (뉴스 수집)
-    - [ ] 네이버 뉴스 API로 최신 뉴스 URL 수집
-    - [ ] 각 URL 페이지에서 meta title, description 추출
-    - [ ] 관계형 DB (PostgreSQL)에 저장
+- [x] 뉴스 API 연동 (`app/news.py`)
+  - [x] newsdata.io API 연동 (최신 뉴스 데이터 가져오기)
+  - [x] 뉴스 데이터에서 title, description 추출 함수
+  - [x] 뉴스 저장 함수 (title, description 포함)
+- [x] 뉴스 수집 API 엔드포인트 (`routers/news.py`)
+  - [x] `POST /api/get_news` 엔드포인트 구현 (뉴스 수집)
+    - [x] newsdata.io API로 최신 뉴스 데이터 수집
+    - [x] 뉴스 데이터에서 title, description 추출
+    - [x] 관계형 DB (PostgreSQL)에 저장
     - [ ] 벡터 DB (pgvector)에 저장 (metadata 포함)
-  - [ ] `GET /api/news` 엔드포인트 구현 (저장된 뉴스 조회)
-    - [ ] DB에 저장된 뉴스 기사 목록 조회
-    - [ ] 필터링 옵션 (날짜, 키워드 등)
+  - [x] `GET /api/news` 엔드포인트 구현 (저장된 뉴스 조회)
+    - [x] DB에 저장된 뉴스 기사 목록 조회
+    - [x] 필터링 옵션 (날짜, 키워드 등)
 - [x] pgvector 설정
   - [x] PostgreSQL에 pgvector 확장 설치
     - [x] Docker Compose에서 pgvector 포함된 PostgreSQL 이미지 사용 또는 확장 설치
@@ -98,7 +98,7 @@
   ```json
   {
     "published_date": "2024-01-15T10:30:00Z",
-    "source_url": "https://news.naver.com/article/123456",
+    "source_url": "https://newsdata.io/article/123456",
     "title": "뉴스 제목",
     "collected_at": "2024-01-15T11:00:00Z"
   }
@@ -349,8 +349,8 @@ CREATE TABLE email_subscriptions (
 ### 뉴스 관련
 
 - `POST /api/get_news` - 뉴스 수집 엔드포인트
-  - 네이버 뉴스 API로 최신 뉴스 URL 수집
-  - 각 URL 페이지에서 meta title, description 추출
+  - newsdata.io API로 최신 뉴스 데이터 수집
+  - 뉴스 데이터에서 title, description 추출
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB에는 날짜, 원문 링크 등 metadata 포함)
   - 1시간마다 크론잡으로 트리거됨
 - `GET /api/news` - 저장된 뉴스 조회 엔드포인트
@@ -389,8 +389,8 @@ CREATE TABLE email_subscriptions (
 ### 자동 스케줄러
 
 - **뉴스 수집**: 매시간 자동 실행 (`POST /api/get_news` 호출)
-  - 네이버 뉴스 API로 최신 뉴스 URL 수집
-  - 각 URL에서 meta title, description 추출
+  - newsdata.io API로 최신 뉴스 데이터 수집
+  - 뉴스 데이터에서 title, description 추출
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB metadata: 날짜, 원문 링크 리스트)
 - **보고서 생성**: 매일 아침 6시 자동 실행 (`POST /api/analyze` 호출)
   - 벡터 DB에서 전날 아침 6시~현재 시간 사이의 뉴스 기사 조회
@@ -421,9 +421,8 @@ CREATE TABLE email_subscriptions (
 # OpenAI API
 OPENAI_API_KEY=your_openai_api_key
 
-# 네이버 뉴스 API
-NAVER_CLIENT_ID=your_naver_client_id
-NAVER_CLIENT_SECRET=your_naver_client_secret
+# NewsData.io API
+NEWSDATA_API_KEY=your_newsdata_api_key
 
 # Database
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stock_analysis
@@ -517,8 +516,8 @@ CLERK_SECRET_KEY=your_clerk_secret_key
 ## 🎯 MVP 완성 기준
 
 - [ ] 1시간마다 자동 뉴스 수집 동작 (`POST /api/get_news` 호출)
-- [ ] 네이버 뉴스 API로 최신 뉴스 URL 수집 및 각 페이지에서 meta title, description 추출
-- [ ] 뉴스 meta title, description을 관계형 DB와 벡터 DB에 저장
+- [ ] newsdata.io API로 최신 뉴스 데이터 수집 및 title, description 추출
+- [ ] 뉴스 title, description을 관계형 DB와 벡터 DB에 저장
 - [ ] 벡터 DB에 날짜 및 원문 링크 리스트를 포함한 metadata 저장 (LLM 참조용)
 - [ ] 매일 아침 6시에 벡터 DB에서 전날 아침 6시~현재 시간 뉴스 기사 조회 후 LLM 보고서 작성
 - [ ] AI 분석 결과 생성 및 보고서 DB 저장

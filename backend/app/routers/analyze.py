@@ -30,7 +30,7 @@ class AnalyzeRequest(BaseModel):
             "example": {
                 "date": date.today().strftime("%Y-%m-%d"),
                 "query": "주식",
-                "count": 10,
+                "size": 10,
                 "force": False
             }
         })
@@ -41,7 +41,13 @@ class AnalyzeRequest(BaseModel):
         description=f"YYYY-MM-DD 형식의 날짜 (예: {date.today().strftime('%Y-%m-%d')})"
     )
     query: str = Field("주식", description="뉴스 검색 쿼리", examples=["주식", "증시", "반도체"])
-    count: int = Field(10, ge=1, le=100, description="가져올 뉴스 개수 (1-100)", examples=[10, 20, 50])
+    size: int = Field(
+        10, 
+        ge=1, 
+        le=10, 
+        description="가져올 뉴스 개수 (1-10, 무료 티어 제한)", 
+        examples=[10]  # Swagger 예시 값
+    )
     force: bool = Field(False, description="이미 분석된 날짜도 재분석할지 여부", examples=[False, True])
     
     @field_validator('date', mode='before')
@@ -85,7 +91,7 @@ async def analyze_news(
     """
     try:
         # 요청 로깅
-        print(f"분석 요청 받음: query={request.query}, count={request.count}, date={request.date}, force={request.force}")
+        print(f"분석 요청 받음: query={request.query}, size={request.size}, date={request.date}, force={request.force}")
         
         # 날짜 파싱
         analysis_date = date.today()
@@ -118,7 +124,7 @@ async def analyze_news(
                 )
         
         # 뉴스 수집
-        news_articles = collect_news(db, query=request.query, count=request.count)
+        news_articles = collect_news(db, query=request.query, size=request.size)
         
         if not news_articles:
             raise HTTPException(
