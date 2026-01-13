@@ -39,6 +39,10 @@
   - [x] `reports` 테이블
   - [x] `report_industries` 테이블
   - [x] `report_stocks` 테이블
+- [x] 데이터베이스 스키마 초기화
+  - [x] `app/main.py`에서 `Base.metadata.create_all(bind=engine)` 실행
+  - [x] pgvector 확장 설치 (`app/database.py` 또는 초기화 스크립트)
+  - [x] 애플리케이션 시작 시 자동 테이블 생성
 - [x] FastAPI 기본 구조 (`main.py`)
 - [x] 헬스 체크 API (`GET /api/health`)
 
@@ -63,13 +67,21 @@
   - [ ] `GET /api/news` 엔드포인트 구현 (저장된 뉴스 조회)
     - [ ] DB에 저장된 뉴스 기사 목록 조회
     - [ ] 필터링 옵션 (날짜, 키워드 등)
-- [ ] pgvector 설정
-  - [ ] PostgreSQL에 pgvector 확장 설치
-  - [ ] 뉴스 메타데이터 벡터 저장 스키마 설계
-  - [ ] 벡터 임베딩 생성 및 저장 함수
-  - [ ] 벡터 DB metadata 설계 (날짜, 원문 링크 리스트 포함)
-    - [ ] LLM이 날짜를 파악할 수 있도록 날짜 정보 포함
-    - [ ] 참조한 기사의 원문 링크 리스트 포함
+- [x] pgvector 설정
+  - [x] PostgreSQL에 pgvector 확장 설치
+    - [x] Docker Compose에서 pgvector 포함된 PostgreSQL 이미지 사용 또는 확장 설치
+    - [x] `CREATE EXTENSION IF NOT EXISTS vector;` 실행
+  - [x] 뉴스 메타데이터 벡터 저장 스키마 설계
+    - [x] `news_articles` 테이블에 `embedding vector(1536)` 컬럼 추가
+    - [x] `metadata JSONB` 컬럼 추가 (날짜, 원문 링크 등)
+  - [x] 벡터 임베딩 생성 및 저장 함수
+    - [x] OpenAI Embedding API 연동 (text-embedding-ada-002 또는 text-embedding-3-small)
+    - [x] meta description 기반 임베딩 생성
+    - [x] pgvector에 벡터 저장 함수 구현
+  - [x] 벡터 DB metadata 설계 (날짜, 원문 링크 리스트 포함)
+    - [x] LLM이 날짜를 파악할 수 있도록 날짜 정보 포함 (`published_date`)
+    - [x] 참조한 기사의 원문 링크 리스트 포함 (`source_url`)
+    - [x] 수집 시간 정보 포함 (`collected_at`)
 - [ ] 스케줄러 구현 (`app/scheduler.py`)
   - [ ] 1시간마다 `POST /api/get_news` 엔드포인트 호출하는 크론잡
   - [ ] 매일 아침 6시 보고서 생성 스케줄러
@@ -203,7 +215,8 @@
 jtj/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py          # FastAPI 앱
+│   │   ├── main.py          # FastAPI 앱 (스키마 초기화 포함)
+│   │   ├── database.py      # DB 연결 및 초기화 (pgvector 확장 설치)
 │   │   ├── news.py          # 뉴스 수집
 │   │   ├── analysis.py      # AI 분석
 │   │   ├── scheduler.py     # 스케줄러 (뉴스 수집, 일일 분석)
@@ -264,7 +277,7 @@ jtj/
 
 - **Containerization**: Docker & Docker Compose
 
-## 🗄 데이터베이스 스키마 (최소)
+### 스키마 정의
 
 ```sql
 -- pgvector 확장 활성화

@@ -11,6 +11,10 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from models import models
 
+# pgvector 확장 활성화
+from app.database import init_vector_extension
+init_vector_extension()
+
 # 데이터베이스 테이블 생성
 Base.metadata.create_all(bind=engine)
 
