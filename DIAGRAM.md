@@ -30,8 +30,19 @@ graph TB
     end
 
     subgraph "Data Layer"
-        PostgreSQL[(PostgreSQL<br/>데이터베이스)]
+        PostgreSQL[(PostgreSQL 15<br/>+ pgvector)]
         Adminer[Adminer<br/>:8080]
+    end
+
+    subgraph "Scheduler Layer"
+        Scheduler[스케줄러<br/>APScheduler]
+        NewsScheduler[뉴스 수집<br/>매시간]
+        AnalysisScheduler[일일 분석<br/>매일 6시]
+        EmailScheduler[이메일 전송<br/>매일 7시]
+    end
+
+    subgraph "Email Services"
+        EmailAPI[이메일 API<br/>SendGrid/Resend]
     end
 
     User --> Browser
@@ -46,20 +57,66 @@ graph TB
     Services -->|AI 분석| OpenAIAPI
     Services -->|데이터 저장/조회| PostgreSQL
     Adminer -->|관리| PostgreSQL
+    Scheduler --> NewsScheduler
+    Scheduler --> AnalysisScheduler
+    Scheduler --> EmailScheduler
+    NewsScheduler -->|POST /api/get_news| FastAPI
+    AnalysisScheduler -->|POST /api/analyze| FastAPI
+    EmailScheduler -->|POST /api/send-email| FastAPI
+    Services -->|이메일 전송| EmailAPI
 ```
 
 ## 🔄 데이터 흐름도
 
-### 1. 뉴스 분석 요청 플로우
+### 1. 자동 뉴스 수집 플로우 (매시간)
+
+```mermaid
+sequenceDiagram
+    participant Scheduler as 스케줄러
+    participant Backend as FastAPI Backend
+    participant Naver as 네이버 뉴스 API
+    participant DB as PostgreSQL (pgvector)
+
+    Note over Scheduler: 매시간 자동 실행
+    Scheduler->>Backend: POST /api/get_news 호출
+    Backend->>Naver: 최신 뉴스 URL 수집
+    Naver-->>Backend: 뉴스 URL 목록
+    Backend->>Backend: 각 URL에서 meta title, description 추출
+    Backend->>DB: 뉴스 기사 저장 (관계형 DB)
+    Backend->>Backend: 벡터 임베딩 생성 (meta description 기반)
+    Backend->>DB: 벡터 데이터 저장 (pgvector, metadata 포함)
+```
+
+### 2. 자동 일일 분석 플로우 (매일 아침 6시)
+
+```mermaid
+sequenceDiagram
+    participant Scheduler as 스케줄러
+    participant Backend as FastAPI Backend
+    participant DB as PostgreSQL (pgvector)
+    participant OpenAI as OpenAI API
+
+    Note over Scheduler: 매일 아침 6시 자동 실행
+    Scheduler->>Backend: POST /api/analyze 호출
+    Backend->>DB: 벡터 DB에서 전날 6시~현재 뉴스 조회
+    DB-->>Backend: 뉴스 기사 목록 (24시간치)
+    Backend->>OpenAI: 뉴스 분석 요청 (취합된 뉴스)
+    OpenAI-->>Backend: 분석 결과 (요약, 산업, 주식)
+
+    Backend->>DB: 보고서 저장
+    Backend->>DB: 산업 분석 저장
+    Backend->>DB: 주식 분석 저장
+```
+
+### 3. 수동 분석 요청 플로우 (선택사항)
 
 ```mermaid
 sequenceDiagram
     participant User as 사용자
     participant Frontend as Next.js Frontend
     participant Backend as FastAPI Backend
-    participant Naver as 네이버 뉴스 API
-    participant OpenAI as OpenAI API
     participant DB as PostgreSQL
+    participant OpenAI as OpenAI API
 
     User->>Frontend: 분석 요청 (수동)
     Frontend->>Backend: POST /api/analyze
@@ -68,10 +125,8 @@ sequenceDiagram
     alt 이미 분석된 날짜
         Backend-->>Frontend: 이미 존재하는 보고서 반환
     else 새로운 분석
-        Backend->>Naver: 뉴스 검색 요청
-        Naver-->>Backend: 뉴스 기사 목록
-        Backend->>DB: 뉴스 기사 저장
-
+        Backend->>DB: 벡터 DB에서 지정 기간 뉴스 조회
+        DB-->>Backend: 뉴스 기사 목록
         Backend->>OpenAI: 뉴스 분석 요청
         OpenAI-->>Backend: 분석 결과 (요약, 산업, 주식)
 
@@ -84,7 +139,29 @@ sequenceDiagram
     end
 ```
 
-### 2. 보고서 조회 플로우
+### 4. 이메일 전송 플로우 (매일 아침 7시)
+
+```mermaid
+sequenceDiagram
+    participant Scheduler as 스케줄러
+    participant Backend as FastAPI Backend
+    participant DB as PostgreSQL
+    participant EmailAPI as 이메일 API<br/>(SendGrid/Resend)
+
+    Note over Scheduler: 매일 아침 7시 자동 실행
+    Scheduler->>Backend: POST /api/send-email 호출
+    Backend->>DB: 오늘 생성된 보고서 조회
+    DB-->>Backend: 보고서 목록
+    Backend->>DB: 구독자 이메일 목록 조회
+    DB-->>Backend: 구독자 목록
+    
+    loop 각 구독자에게
+        Backend->>EmailAPI: 보고서 링크 포함 이메일 전송
+        EmailAPI-->>Backend: 전송 완료
+    end
+```
+
+### 5. 보고서 조회 플로우
 
 ```mermaid
 sequenceDiagram
@@ -111,26 +188,36 @@ sequenceDiagram
 ## 📡 API 엔드포인트 구조
 
 ```mermaid
-graph LR
+graph TB
     subgraph "FastAPI Server :8000"
-        Root[/]
         Health[GET /api/health]
-        Analyze[POST /api/analyze]
-        ReportsToday[GET /api/reports/today]
-        ReportDetail[GET /api/report/:id]
+        
+        subgraph "뉴스 API"
+            GetNews[POST /api/get_news<br/>뉴스 수집]
+            NewsList[GET /api/news<br/>뉴스 조회]
+        end
+        
+        subgraph "보고서 API"
+            Analyze[POST /api/analyze<br/>보고서 작성]
+            ReportsToday[GET /api/reports/today<br/>오늘의 보고서]
+            ReportDetail[GET /api/report/:id<br/>보고서 상세]
+        end
+        
+        subgraph "이메일 API"
+            Subscribe[POST /api/subscribe<br/>이메일 구독]
+            SendEmail[POST /api/send-email<br/>이메일 전송]
+        end
     end
 
-    subgraph "Request/Response"
-        AnalyzeReq[AnalyzeRequest<br/>- date: optional<br/>- query: string<br/>- count: number<br/>- force: boolean]
-        AnalyzeRes[AnalyzeResponse<br/>- report_id<br/>- status<br/>- message<br/>- news_count]
-        ReportList[ReportListItem[]<br/>- id, title, summary<br/>- analysis_date<br/>- news_count<br/>- industry_count]
-        ReportDetailRes[ReportDetail<br/>- id, title, summary<br/>- news_articles[]<br/>- industries[]<br/>- stocks[]]
-    end
-
-    Analyze --> AnalyzeReq
-    Analyze --> AnalyzeRes
-    ReportsToday --> ReportList
-    ReportDetail --> ReportDetailRes
+    GetNews -->|네이버 API| Naver[네이버 뉴스 API]
+    GetNews -->|저장| DB1[(PostgreSQL<br/>+ pgvector)]
+    NewsList -->|조회| DB1
+    Analyze -->|벡터 DB 조회| DB1
+    Analyze -->|분석| OpenAI[OpenAI API]
+    Analyze -->|저장| DB2[(PostgreSQL)]
+    ReportsToday -->|조회| DB2
+    ReportDetail -->|조회| DB2
+    SendEmail -->|전송| EmailAPI[이메일 API<br/>SendGrid/Resend]
 ```
 
 ## 🗄 데이터베이스 스키마
@@ -153,11 +240,14 @@ erDiagram
     NEWS_ARTICLES {
         int id PK
         string title
+        text meta_description
         text content
         string source
         string url
         timestamp published_at
         timestamp collected_at
+        vector embedding "pgvector"
+        jsonb metadata "날짜, 원문 링크 등"
     }
 
     REPORT_NEWS {
@@ -240,8 +330,17 @@ graph TB
     end
 
     subgraph "Database"
-        PostgreSQL[PostgreSQL 15]
+        PostgreSQL[PostgreSQL 15<br/>+ pgvector]
         Adminer[Adminer]
+    end
+
+    subgraph "Scheduler"
+        APScheduler[APScheduler]
+    end
+
+    subgraph "Email Services"
+        SendGrid[SendGrid API]
+        Resend[Resend API]
     end
 
     subgraph "External Services"
@@ -266,8 +365,13 @@ graph TB
     SQLAlchemy --> PostgreSQL
     Adminer --> PostgreSQL
 
+    FastAPI --> APScheduler
+    APScheduler --> Naver
+    APScheduler --> OpenAI
     FastAPI --> Naver
     FastAPI --> OpenAI
+    FastAPI --> SendGrid
+    FastAPI --> Resend
 
     Docker --> NextJS
     Docker --> FastAPI
@@ -277,25 +381,65 @@ graph TB
 
 ## 📋 주요 기능 플로우
 
-### 분석 프로세스 상세
+### 자동 뉴스 수집 프로세스 (매시간)
 
 ```mermaid
 flowchart TD
-    Start([분석 요청 시작]) --> Validate{날짜 검증}
+    Start([스케줄러: 매시간<br/>POST /api/get_news]) --> Collect[뉴스 수집]
+    Collect --> NaverAPI[네이버 API 호출<br/>최신 뉴스 URL 수집]
+    NaverAPI -->|성공| Extract[meta title, description 추출]
+    NaverAPI -->|실패| Error1[에러 로깅]
+    
+    Extract --> SaveNews[관계형 DB 저장]
+    SaveNews --> Embedding[벡터 임베딩 생성<br/>(meta description 기반)]
+    Embedding --> SaveVector[pgvector에 저장<br/>(metadata 포함)]
+    SaveVector --> Success1[수집 완료]
+    
+    Error1 --> End([종료])
+    Success1 --> End
+```
+
+### 자동 일일 분석 프로세스 (매일 아침 6시)
+
+```mermaid
+flowchart TD
+    Start([스케줄러: 매일 6시<br/>POST /api/analyze]) --> Query[벡터 DB에서<br/>전날 6시~현재 뉴스 조회]
+    Query --> Check{뉴스 존재?}
+    
+    Check -->|없음| NoNews[뉴스 없음 로깅]
+    Check -->|있음| Aggregate[뉴스 취합]
+    
+    Aggregate --> Analyze[AI 분석]
+    Analyze --> OpenAI[OpenAI API 호출<br/>LLM 보고서 작성]
+    OpenAI -->|성공| Parse[결과 파싱]
+    OpenAI -->|실패| Error1[에러 로깅]
+    
+    Parse --> SaveReport[보고서 저장]
+    SaveReport --> SaveIndustries[산업 분석 저장]
+    SaveIndustries --> SaveStocks[주식 분석 저장]
+    SaveStocks --> Success[분석 완료]
+    
+    NoNews --> End([종료])
+    Error1 --> End
+    Success --> End
+```
+
+### 수동 분석 프로세스 (선택사항)
+
+```mermaid
+flowchart TD
+    Start([사용자 요청]) --> Validate{날짜 검증}
     Validate -->|유효하지 않음| Error1[에러 반환]
     Validate -->|유효함| Check{이미 분석됨?}
 
     Check -->|예, force=false| Return[기존 보고서 반환]
-    Check -->|아니오 또는 force=true| Collect[뉴스 수집]
+    Check -->|아니오 또는 force=true| Query[지정 기간 뉴스 조회]
 
-    Collect --> NaverAPI[네이버 API 호출]
-    NaverAPI -->|성공| SaveNews[뉴스 DB 저장]
-    NaverAPI -->|실패| Error2[에러 반환]
-
-    SaveNews --> Analyze[AI 분석]
+    Query --> Aggregate[뉴스 취합]
+    Aggregate --> Analyze[AI 분석]
     Analyze --> OpenAI[OpenAI API 호출]
     OpenAI -->|성공| Parse[결과 파싱]
-    OpenAI -->|실패| Error3[에러 반환]
+    OpenAI -->|실패| Error2[에러 반환]
 
     Parse --> SaveReport[보고서 저장]
     SaveReport --> SaveIndustries[산업 분석 저장]
@@ -304,7 +448,6 @@ flowchart TD
 
     Error1 --> End([종료])
     Error2 --> End
-    Error3 --> End
     Return --> End
     Success --> End
 ```
@@ -334,6 +477,31 @@ flowchart TD
     RenderDetail --> End
 ```
 
+### 이메일 전송 프로세스 (매일 아침 7시)
+
+```mermaid
+flowchart TD
+    Start([스케줄러: 매일 7시<br/>POST /api/send-email]) --> GetReport[오늘 생성된 보고서 조회]
+    GetReport --> GetSubscribers[구독자 이메일 목록 조회]
+    GetSubscribers --> Check{보고서 및 구독자 존재?}
+    
+    Check -->|없음| NoData[데이터 없음 로깅]
+    Check -->|있음| Loop[각 구독자에게 반복]
+    
+    Loop --> CreateEmail[이메일 생성<br/>보고서 링크 포함]
+    CreateEmail --> SendEmail[이메일 API 호출<br/>SendGrid/Resend]
+    SendEmail -->|성공| Next[다음 구독자]
+    SendEmail -->|실패| Error1[에러 로깅]
+    
+    Next --> CheckLoop{더 많은 구독자?}
+    CheckLoop -->|예| Loop
+    CheckLoop -->|아니오| Success[전송 완료]
+    
+    NoData --> End([종료])
+    Error1 --> End
+    Success --> End
+```
+
 ## 🌐 네트워크 아키텍처
 
 ```mermaid
@@ -348,7 +516,7 @@ graph TB
         end
 
         subgraph "Database Container"
-            PostgreSQL[PostgreSQL :5432]
+            PostgreSQL[PostgreSQL :5432<br/>+ pgvector]
         end
 
         subgraph "Admin Container"
@@ -359,6 +527,7 @@ graph TB
     subgraph "External Services"
         NaverAPI[네이버 API<br/>openapi.naver.com]
         OpenAIAPI[OpenAI API<br/>api.openai.com]
+        EmailAPI[이메일 API<br/>SendGrid/Resend]
     end
 
     NextJS <-->|HTTP/REST| FastAPI
@@ -366,6 +535,7 @@ graph TB
     Adminer <-->|SQL| PostgreSQL
     FastAPI <-->|HTTPS| NaverAPI
     FastAPI <-->|HTTPS| OpenAIAPI
+    FastAPI <-->|HTTPS| EmailAPI
 ```
 
 ## 📦 컴포넌트 의존성
@@ -384,7 +554,9 @@ graph LR
         FastAPI --> SQLAlchemy
         FastAPI --> Pydantic
         FastAPI --> Requests
+        FastAPI --> APScheduler
         SQLAlchemy --> PostgreSQL
+        PostgreSQL --> pgvector
         Requests --> OpenAI
         Requests --> NaverAPI
     end
@@ -405,10 +577,12 @@ graph TB
     subgraph "External APIs"
         Naver[네이버 뉴스 API]
         OpenAI[OpenAI API]
+        Email[이메일 API<br/>SendGrid/Resend]
     end
 
     Backend --> Naver
     Backend --> OpenAI
+    Backend --> Email
     Backend --> DB
     Frontend --> Backend
     Admin --> DB
@@ -426,7 +600,7 @@ graph TB
 ### 데이터 흐름도
 
 - 시퀀스 다이어그램으로 요청-응답 플로우를 시각화합니다
-- 분석 요청과 보고서 조회의 두 가지 주요 플로우를 다룹니다
+- 자동 뉴스 수집, 일일 분석, 이메일 전송, 보고서 조회의 주요 플로우를 다룹니다
 
 ### API 엔드포인트 구조
 

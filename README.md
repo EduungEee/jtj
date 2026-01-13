@@ -8,22 +8,20 @@
 
 ## ✨ 주요 기능
 
-- 🏠 **홈페이지**:
-  - 가입 유도 섹션
-  - 오늘 작성된 보고서 미리보기 및 클릭 시 보고서 페이지로 이동
-  - 분석 방식 및 서비스 소개 홍보 섹션
-- 📰 **뉴스 수집**: 최신 뉴스 데이터 자동 수집
-- 🤖 **AI 분석**:
-  - 뉴스 기사 내용 분석
-  - 기사로 인한 사회적 파급효과 예측
-  - 파급효과에 따른 영향받는 산업 및 주식 분석
-- 📊 **보고서 생성**: 분석 결과를 웹 보고서 페이지로 생성
-- 📧 **이메일 전송**: 생성된 보고서 링크를 사용자 이메일로 전송
-- 🔗 **보고서 조회**: 이메일 링크를 통해 보고서 페이지 접근
+- 📰 **자동 뉴스 수집**: 1시간마다 네이버 뉴스 API로 최신 뉴스 자동 수집
+  - meta description 데이터만 추출
+  - pgvector와 PostgreSQL에 각각 저장
+- 🤖 **자동 보고서 생성**: 매일 아침 6시에 보고서 생성
+  - 보고서 생성 시점으로부터 24시간 전의 뉴스 기사들을 활용
+  - LLM을 사용하여 주식 동향 예측 분석
+  - 뉴스 기사 내용 분석 및 사회적 파급효과 예측
+  - 영향받는 산업 및 주식 분석
+- 📧 **이메일 전송**: 매일 아침 7시에 생성된 보고서 링크를 사용자 이메일로 자동 전송
 
 ## 🛠 기술 스택 (MVP)
 
-- **Backend**: FastAPI, PostgreSQL, OpenAI API
+- **Backend**: FastAPI, PostgreSQL + pgvector (Vector DB), OpenAI API
+- **Scheduler**: APScheduler (백그라운드 작업, 가볍고 FastAPI 통합 용이)
 - **Frontend**: Next.js 15 (App Router)
 - **기타**: Docker Compose, 네이버 뉴스 API, SendGrid/Resend (이메일 API)
 
@@ -53,10 +51,45 @@ npm run dev
 
 ## 📝 API 엔드포인트
 
+### 뉴스 관련
+- `POST /api/get_news` - 뉴스 수집 엔드포인트
+  - 네이버 뉴스 API로 최신 뉴스 URL 수집
+  - 각 URL 페이지에서 meta title, description 추출
+  - 관계형 DB와 벡터 DB에 저장 (벡터 DB에는 날짜, 원문 링크 등 metadata 포함)
+  - 1시간 마다 크론잡으로 트리거됨
+- `GET /api/news` - 저장된 뉴스 조회 엔드포인트
+  - DB에 저장된 뉴스 기사 목록 조회
+  - 필터링 옵션 (날짜, 키워드 등)
+
+### 보고서 관련
 - `GET /api/reports/today` - 오늘의 보고서 목록
 - `GET /api/report/{report_id}` - 보고서 상세
-- `POST /api/analyze` - 뉴스 분석 요청
+- `POST /api/analyze` - 뉴스 분석 및 보고서 작성
+  - 벡터 DB에서 현재 시간~전날 아침 6시 사이의 뉴스 기사 조회
+  - 조회된 뉴스 기사들을 LLM에 전달하여 보고서 작성
+  - 분석 결과(보고서)를 DB에 저장
+  - 아침 6시에 트리거 됨
+
+### 이메일 관련
+- `POST /api/send-email` - 이메일 전송 엔드포인트
+  - 오늘 생성된 보고서 링크를 구독자 이메일로 전송
+  - 외부 이메일 API 사용 (SendGrid/Resend)
+  - 아침 7시에 크론잡으로 트리거됨
 - `POST /api/subscribe` - 이메일 구독
+  - 사용자 이메일 주소를 구독 목록에 추가
+
+### 자동 스케줄러
+
+- **뉴스 수집**: 매시간 자동 실행 (`POST /api/get_news` 호출)
+  - 네이버 뉴스 API로 최신 뉴스 URL 수집
+  - 각 URL에서 meta title, description 추출
+  - 관계형 DB와 벡터 DB에 저장 (벡터 DB metadata: 날짜, 원문 링크 리스트)
+- **보고서 생성**: 매일 아침 6시 자동 실행 (`POST /api/analyze` 호출)
+  - 벡터 DB에서 전날 아침 6시~현재 시간 사이의 뉴스 기사 조회
+  - 조회된 뉴스 기사들을 LLM에 전달하여 주식 동향 예측 보고서 작성
+- **이메일 전송**: 매일 아침 7시 자동 실행 (`POST /api/send-email` 호출)
+  - 오늘 생성된 보고서 링크를 구독자 이메일로 전송
+  - 외부 이메일 API 사용 (SendGrid/Resend)
 
 ## 🔧 환경 변수
 
