@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, DATE, DECIMAL, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import JSONB
 import sys
 import os
 
@@ -29,6 +30,9 @@ class NewsArticle(Base):
     url = Column(String(1000))
     published_at = Column(TIMESTAMP)
     collected_at = Column(TIMESTAMP, server_default=func.now())
+    # embedding은 pgvector vector(1536) 타입이므로 SQLAlchemy 모델에서는 제외
+    # SQL로 직접 저장/조회 (save_embedding_to_db 함수 사용)
+    article_metadata = Column("metadata", JSONB)  # 벡터 DB metadata (title, url, published_date, collected_at 포함)
 
     # 관계
     reports = relationship("Report", secondary=report_news, back_populates="news_articles")
