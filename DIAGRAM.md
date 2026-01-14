@@ -26,6 +26,9 @@ graph TB
 
     subgraph "External APIs"
         NewsDataAPI[NewsData.io API]
+        NaverAPI[Naver News API]
+        GNewsAPI[GNews API]
+        TheNewsAPI[The News API]
         OpenAIAPI[OpenAI API]
     end
 
@@ -54,6 +57,9 @@ graph TB
     FastAPI --> Routers
     Routers --> Services
     Services -->|뉴스 수집| NewsDataAPI
+    Services -->|뉴스 수집| NaverAPI
+    Services -->|뉴스 수집| GNewsAPI
+    Services -->|뉴스 수집| TheNewsAPI
     Services -->|AI 분석| OpenAIAPI
     Services -->|데이터 저장/조회| PostgreSQL
     Adminer -->|관리| PostgreSQL
@@ -79,9 +85,14 @@ sequenceDiagram
 
     Note over Scheduler: 매시간 자동 실행
     Scheduler->>Backend: POST /api/get_news 호출
-    Backend->>NewsData: 최신 뉴스 데이터 수집
-    NewsData-->>Backend: 뉴스 데이터 목록
-    Backend->>Backend: 뉴스 데이터에서 title, description 추출
+    
+    loop 각 뉴스 API Provider (Greedy Filling 전략)
+        Backend->>ExternalAPI: 최신 뉴스 데이터 수집 요청 (변환된 쿼리 & 수량)
+        ExternalAPI-->>Backend: 뉴스 데이터 목록
+        Note over Backend: 부족한 기사 수는 다음 API에서 보충
+    end
+    
+    Backend->>Backend: 뉴스 데이터 통합 및 URL 기반 중복 제거
     Backend->>DB: 뉴스 기사 저장 (관계형 DB)
     Backend->>Backend: 벡터 임베딩 생성 (meta description 기반)
     Backend->>DB: 벡터 데이터 저장 (pgvector, metadata 포함)
@@ -209,7 +220,7 @@ graph TB
         end
     end
 
-    GetNews -->|NewsData.io API| NewsData[NewsData.io API]
+    GetNews -->|멀티 API Orchestration| ExternalAPIs[NewsData, Naver, GNews, TheNewsAPI]
     GetNews -->|저장| DB1[(PostgreSQL<br/>+ pgvector)]
     NewsList -->|조회| DB1
     Analyze -->|벡터 DB 조회| DB1
@@ -344,7 +355,10 @@ graph TB
     end
 
     subgraph "External Services"
+        NewsData[NewsData.io API]
         Naver[네이버 뉴스 API]
+        GNews[GNews API]
+        TheNewsAPI[The News API]
         OpenAI[OpenAI API]
     end
 
@@ -385,18 +399,22 @@ graph TB
 
 ```mermaid
 flowchart TD
-    Start([스케줄러: 매시간<br/>POST /api/get_news]) --> Collect[뉴스 수집]
-    Collect --> NewsDataAPI[NewsData.io API 호출<br/>최신 뉴스 데이터 수집]
-    NewsDataAPI -->|성공| Extract[title, description 추출]
-    NewsDataAPI -->|실패| Error1[에러 로깅]
+    Start([스케줄러: 매시간<br/>POST /api/get_news]) --> Orchestrate[Orchestration 설정]
+    Orchestrate --> Split[쿼리 분리 및 OR 변환]
+    Split --> LoopProviders{모든 Provider 시도?}
     
-    Extract --> SaveNews[관계형 DB 저장]
-    SaveNews --> Embedding[벡터 임베딩 생성<br/>(description 기반)]
-    Embedding --> SaveVector[pgvector에 저장<br/>(metadata 포함)]
+    LoopProviders -->|아니오| Allocate[동적 수량 할당<br/>Greedy Filling]
+    Allocate --> Fetch[API 호출]
+    Fetch --> Update[잔여 수량 업데이트]
+    Update --> LoopProviders
+    
+    LoopProviders -->|예| Dedupe[URL 기반 중복 제거]
+    Dedupe --> SaveNews[관계형 DB 저장]
+    SaveNews --> Embedding[벡터 임베딩 생성]
+    Embedding --> SaveVector[pgvector에 저장]
     SaveVector --> Success1[수집 완료]
     
-    Error1 --> End([종료])
-    Success1 --> End
+    Success1 --> End([종료])
 ```
 
 ### 자동 일일 분석 프로세스 (매일 아침 6시)

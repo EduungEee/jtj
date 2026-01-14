@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, date
 from typing import List, Optional
 from app.database import get_db
-from app.news import collect_news, fetch_news_from_api
+from app.news import collect_news
 import sys
 import os
 
@@ -26,14 +26,10 @@ router = APIRouter()
 class NewsCollectionRequest(BaseModel):
     """뉴스 수집 요청 모델
     
-    newsdata.io API를 사용하여 한국 관련 뉴스를 수집합니다.
-    자동으로 다음 파라미터가 적용됩니다:
-    - country=kr (한국)
-    - language=ko (한국어)
-    - timezone=asia/seoul (한국 시간대)
-    - image=0 (이미지 제외)
-    - video=0 (비디오 제외)
-    - removeduplicate=1 (중복 제거)
+    여러 뉴스 API Provider(newsdata.io, Naver, GNews, The News API)를 사용하여 
+    한국 관련 뉴스를 수집합니다. 각 Provider는 환경 변수로 활성화됩니다.
+    
+    활성화된 모든 Provider에서 동시에 뉴스를 수집하며, URL 기반 중복 제거가 자동으로 수행됩니다.
     """
     query: str = Field(
         default="주식 OR 증시 OR 코스피 OR 코스닥 OR 반도체 OR 경제 OR 금리 OR 부동산 OR 주가 OR 투자",
@@ -42,8 +38,8 @@ class NewsCollectionRequest(BaseModel):
     size: int = Field(
         default=10, 
         ge=1, 
-        le=10, 
-        description="가져올 뉴스 개수 (1-10, 무료 티어 제한)",
+        le=100, 
+        description="각 Provider에서 가져올 뉴스 개수 (1-100, Provider별 제한이 다를 수 있음)",
         examples=[10]  # Swagger 예시 값
     )
     
@@ -66,6 +62,7 @@ class NewsArticleResponse(BaseModel):
     url: Optional[str] = None
     published_at: Optional[datetime] = None
     collected_at: Optional[datetime] = None
+    provider: Optional[str] = None  # 뉴스 API 제공자 (newsdata, naver, gnews, thenewsapi)
     
     class Config:
         from_attributes = True
@@ -86,21 +83,24 @@ async def collect_news_endpoint(
     """
     뉴스를 수집하고 데이터베이스에 저장합니다.
     
-    newsdata.io API를 사용하여 한국 관련 뉴스를 수집합니다.
+    여러 뉴스 API Provider를 통해 뉴스를 수집합니다:
+    - **newsdata.io**: 환경 변수 `NEWSDATA_API_KEY` 설정 시 활성화 (최대 10개)
+    - **Naver**: 환경 변수 `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` 설정 시 활성화 (최대 100개)
+    - **GNews**: 환경 변수 `GNEWS_API_KEY` 설정 시 활성화 (최대 100개)
+    - **The News API**: 환경 변수 `THENEWSAPI_API_KEY` 설정 시 활성화 (최대 50개)
     
-    **자동 적용되는 파라미터:**
-    - country=kr (한국)
-    - language=ko (한국어)
-    - timezone=asia/seoul (한국 시간대)
-    - image=0 (이미지 제외)
-    - video=0 (비디오 제외)
-    - removeduplicate=1 (중복 제거)
+    **동작 방식:**
+    - 활성화된 모든 Provider에서 동시에 뉴스를 수집합니다
+    - 각 Provider는 한국어(`lang=ko` 또는 `language=ko`) 뉴스를 수집합니다
+    - URL 기반 중복 제거가 자동으로 수행됩니다
+    - 각 뉴스 기사는 `provider` 필드로 출처를 구분할 수 있습니다
     
     **요청 파라미터:**
     - **query**: 검색 쿼리 (OR 연산자로 여러 키워드 연결 가능)
       - 기본값: "주식 OR 증시 OR 코스피 OR 코스닥 OR 반도체 OR 경제 OR 금리 OR 부동산 OR 주가 OR 투자"
       - 예시: "주식 OR 증시", "경제 OR 금리", "반도체 OR 반도체주"
-    - **size**: 가져올 뉴스 개수 (1-10, 기본값: 10, 무료 티어 제한)
+    - **size**: 각 Provider에서 가져올 뉴스 개수 (1-100, 기본값: 10)
+      - Provider별 제한이 다를 수 있습니다 (newsdata.io는 최대 10개)
     
     **예시 요청:**
     ```json
@@ -111,11 +111,11 @@ async def collect_news_endpoint(
     ```
     """
     try:
-        # size 범위 검증 (무료 티어 제한: 1-10)
-        if request.size < 1 or request.size > 10:
+        # size 범위 검증
+        if request.size < 1 or request.size > 100:
             raise HTTPException(
                 status_code=400,
-                detail="size는 1-10 사이의 값이어야 합니다. (무료 티어 제한)"
+                detail="size는 1-100 사이의 값이어야 합니다."
             )
         
         # 뉴스 수집 및 저장
@@ -134,7 +134,8 @@ async def collect_news_endpoint(
                 source=article.source,
                 url=article.url,
                 published_at=article.published_at,
-                collected_at=article.collected_at
+                collected_at=article.collected_at,
+                provider=article.provider
             )
             for article in saved_articles
         ]
@@ -170,6 +171,13 @@ async def get_news(
     - **start_date**: 시작 날짜 (YYYY-MM-DD 형식)
     - **end_date**: 종료 날짜 (YYYY-MM-DD 형식)
     - **keyword**: 제목 또는 내용에서 검색할 키워드
+    
+    **응답 필드:**
+    - 각 뉴스 기사는 `provider` 필드를 포함하여 어떤 API에서 수집되었는지 구분할 수 있습니다
+      - `newsdata`: newsdata.io API
+      - `naver`: Naver 뉴스 검색 API
+      - `gnews`: GNews API
+      - `thenewsapi`: The News API
     """
     try:
         # 기본 쿼리
@@ -202,7 +210,8 @@ async def get_news(
                 source=article.source,
                 url=article.url,
                 published_at=article.published_at,
-                collected_at=article.collected_at
+                collected_at=article.collected_at,
+                provider=article.provider
             )
             for article in articles
         ]
