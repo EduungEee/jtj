@@ -8,8 +8,8 @@
 ┌─────────────────┐         ┌──────────────────┐
 │   Vercel        │         │   AWS EC2        │
 │  (Frontend)     │────────▶│  Ubuntu Server   │
-│                 │  HTTPS  │                  │
-│  Next.js 15     │         │  nginx:443       │
+│                 │  HTTP   │                  │
+│  Next.js 15     │         │  nginx:80        │
 │                 │         │    ↓             │
 │  *.vercel.app   │         │  FastAPI:8000    │
 └─────────────────┘         │  PostgreSQL:5432 │
@@ -21,7 +21,7 @@
 1. [AWS EC2 인스턴스 생성](#1-aws-ec2-인스턴스-생성)
 2. [EC2 서버 초기 설정](#2-ec2-서버-초기-설정)
 3. [백엔드 배포](#3-백엔드-배포)
-4. [nginx 설정 및 SSL 인증서 발급](#4-nginx-설정-및-ssl-인증서-발급)
+4. [nginx 설정](#4-nginx-설정)
 5. [프론트엔드 배포 (Vercel)](#5-프론트엔드-배포-vercel)
 6. [서비스 자동 시작 설정](#6-서비스-자동-시작-설정)
 7. [트러블슈팅](#7-트러블슈팅)
@@ -54,7 +54,6 @@
 
 - **SSH (22)**: 소스 `내 IP` 또는 `0.0.0.0/0` (보안상 특정 IP로 제한 권장)
 - **HTTP (80)**: 소스 `0.0.0.0/0`
-- **HTTPS (443)**: 소스 `0.0.0.0/0`
 
 **아웃바운드 규칙:**
 
@@ -148,7 +147,6 @@ sudo ufw enable
 # 필요한 포트 열기
 sudo ufw allow 22/tcp   # SSH
 sudo ufw allow 80/tcp   # HTTP
-sudo ufw allow 443/tcp  # HTTPS
 
 # 상태 확인
 sudo ufw status
@@ -265,16 +263,16 @@ curl http://<EC2_PUBLIC_IP>:8000/docs
 
 ---
 
-## 4. nginx 설정 및 SSL 인증서 발급
+## 4. nginx 설정
 
 ### 4.1 nginx 설정 파일 복사
 
 ```bash
 # nginx 설정 파일 복사
-sudo cp ~/stock-analysis/nginx/nginx.conf /etc/nginx/sites-available/stock-analysis
+sudo cp ~/jtj/nginx/nginx.conf /etc/nginx/sites-available/jtj
 
 # 심볼릭 링크 생성
-sudo ln -s /etc/nginx/sites-available/stock-analysis /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/jtj /etc/nginx/sites-enabled/
 
 # 기본 설정 비활성화 (선택사항)
 sudo rm /etc/nginx/sites-enabled/default
@@ -293,44 +291,6 @@ sudo systemctl restart nginx
 curl http://<EC2_PUBLIC_IP>/api/health
 ```
 
-### 4.3 SSL 인증서 발급 (Let's Encrypt)
-
-도메인이 있는 경우 SSL 인증서를 발급받습니다:
-
-```bash
-# certbot 설치
-sudo apt install certbot python3-certbot-nginx -y
-
-# SSL 인증서 발급 (도메인 이름으로 교체)
-sudo certbot --nginx -d your-domain.com -d www.your-domain.com
-
-# 인증서 자동 갱신 테스트
-sudo certbot renew --dry-run
-```
-
-도메인이 없는 경우 (IP 주소만 사용):
-
-- Let's Encrypt는 도메인 이름이 필요하므로 IP 주소만으로는 SSL 인증서를 발급받을 수 없습니다.
-- HTTP로만 서비스하거나, AWS Certificate Manager와 로드 밸런서를 사용하는 방법을 고려하세요.
-
-### 4.4 nginx SSL 설정 활성화
-
-도메인과 SSL 인증서가 있는 경우, `nginx.conf` 파일의 SSL 설정 부분을 활성화하고 도메인 이름을 업데이트합니다:
-
-```bash
-sudo nano /etc/nginx/sites-available/stock-analysis
-```
-
-SSL 설정 부분의 주석을 제거하고 도메인 이름을 수정한 후:
-
-```bash
-# nginx 설정 테스트
-sudo nginx -t
-
-# nginx 재시작
-sudo systemctl restart nginx
-```
-
 ---
 
 ## 5. 프론트엔드 배포 (Vercel)
@@ -345,7 +305,7 @@ sudo systemctl restart nginx
 
 Vercel 대시보드에서 프로젝트 설정 > Environment Variables로 이동하여 다음 변수를 추가:
 
-- **NEXT_PUBLIC_API_URL**: `http://<EC2_PUBLIC_IP>` 또는 `https://your-domain.com` (SSL 사용 시)
+- **NEXT_PUBLIC_API_URL**: `http://<EC2_PUBLIC_IP>`
 
 **참고**: Vercel 배포 후 실제 도메인을 확인하여 백엔드의 `.env` 파일에 `VERCEL_DOMAINS` 환경 변수를 추가해야 합니다.
 
@@ -434,12 +394,12 @@ sudo systemctl enable nginx
 
 ### 7.1 보안 그룹 설정 문제
 
-**문제**: HTTP/HTTPS 접근이 안 됩니다.
+**문제**: HTTP 접근이 안 됩니다.
 
 **해결 방법**:
 
 - AWS 콘솔에서 보안 그룹 인바운드 규칙 확인
-- 포트 80, 443이 열려있는지 확인
+- 포트 80이 열려있는지 확인
 - 소스가 `0.0.0.0/0`으로 설정되어 있는지 확인
 
 ### 7.2 포트 접근 불가
@@ -631,7 +591,6 @@ sudo journalctl -u stock-analysis.service -f
 - [Docker 문서](https://docs.docker.com/)
 - [nginx 문서](https://nginx.org/en/docs/)
 - [Vercel 문서](https://vercel.com/docs)
-- [Let's Encrypt 문서](https://letsencrypt.org/docs/)
 
 ---
 
