@@ -46,9 +46,29 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 # CORS 설정
+# 환경 변수에서 허용할 origin 목록 가져오기
+allowed_origins = ["http://localhost:3000"]  # 개발 환경
+
+# 프로덕션 환경 변수에서 추가 origin 가져오기
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    allowed_origins.append(frontend_url)
+
+# Vercel 도메인 목록 (쉼표로 구분)
+vercel_domains = os.getenv("VERCEL_DOMAINS", "")
+if vercel_domains:
+    # 쉼표로 구분된 도메인 목록을 파싱
+    domains = [domain.strip() for domain in vercel_domains.split(",") if domain.strip()]
+    allowed_origins.extend(domains)
+
+# 환경 변수로 모든 origin 허용 옵션 (개발용, 프로덕션에서는 사용하지 않음)
+allow_all_origins = os.getenv("CORS_ALLOW_ALL", "false").lower() == "true"
+if allow_all_origins:
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

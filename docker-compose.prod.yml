@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stock_analysis
+    ports:
+      - "127.0.0.1:5432:5432"  # localhost에만 노출
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"  # localhost에만 노출 (nginx가 프록시)
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stock_analysis
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # 프로덕션에서는 volumes 마운트 제거 (이미지에 코드 포함)
+
+volumes:
+  postgres_data:
