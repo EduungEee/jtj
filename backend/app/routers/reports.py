@@ -112,6 +112,39 @@ async def get_report(
     return report
 
 
+@router.get("/reports", response_model=List[ReportListItemResponse])
+async def get_all_reports(
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """
+    전체 보고서 목록을 조회합니다 (최신순).
+    """
+    # 전체 보고서 조회 (관계 데이터도 함께 로드)
+    reports = db.query(Report).options(
+        joinedload(Report.news_articles),
+        joinedload(Report.industries)
+    ).order_by(Report.created_at.desc()).limit(limit).all()
+    
+    # 각 보고서의 뉴스 개수와 산업 개수 계산
+    result = []
+    for report in reports:
+        news_count = len(report.news_articles) if report.news_articles else 0
+        industry_count = len(report.industries) if report.industries else 0
+        
+        result.append(ReportListItemResponse(
+            id=report.id,
+            title=report.title,
+            summary=report.summary,
+            analysis_date=report.analysis_date,
+            created_at=report.created_at,
+            news_count=news_count,
+            industry_count=industry_count
+        ))
+    
+    return result
+
+
 @router.get("/reports/today", response_model=List[ReportListItemResponse])
 async def get_today_reports(
     db: Session = Depends(get_db)
