@@ -39,7 +39,7 @@ class NewsCollectionRequest(BaseModel):
         default=10, 
         ge=1, 
         le=100, 
-        description="각 Provider에서 가져올 뉴스 개수 (1-100, Provider별 제한이 다를 수 있음)",
+        description="가져올 뉴스 개수 (참고: 현재 정책상 모든 Provider에서 최대 개수를 수집하므로 이 값은 수집 단계에서 무시될 수 있음)",
         examples=[10]  # Swagger 예시 값
     )
     
@@ -99,8 +99,7 @@ async def collect_news_endpoint(
     - **query**: 검색 쿼리 (OR 연산자로 여러 키워드 연결 가능)
       - 기본값: "주식 OR 증시 OR 코스피 OR 코스닥 OR 반도체 OR 경제 OR 금리 OR 부동산 OR 주가 OR 투자"
       - 예시: "주식 OR 증시", "경제 OR 금리", "반도체 OR 반도체주"
-    - **size**: 각 Provider에서 가져올 뉴스 개수 (1-100, 기본값: 10)
-      - Provider별 제한이 다를 수 있습니다 (newsdata.io는 최대 10개)
+    - **size**: (참고) 현재 모든 Provider에서 가능한 최대 개수를 수집하도록 변경되어, 이 파라미터는 수집 단계에서 무시됩니다.
     
     **예시 요청:**
     ```json

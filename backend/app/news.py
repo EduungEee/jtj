@@ -232,6 +232,79 @@ def normalize_provider_name(provider_name: str) -> str:
 
 
 # ============================================================================
+# 뉴스 제공자 공통 헬퍼 함수
+# ============================================================================
+
+
+def _make_api_request(
+    url: str,
+    params: dict,
+    headers: Optional[dict],
+    provider_name: str,
+    timeout: int = REQUEST_TIMEOUT
+) -> dict:
+    """
+    공통 HTTP GET 요청 처리 함수.
+    
+    Args:
+        url: API 엔드포인트 URL
+        params: 쿼리 파라미터
+        headers: HTTP 헤더 (Optional)
+        provider_name: Provider 이름 (로깅용)
+        timeout: 타임아웃 (초)
+        
+    Returns:
+        파싱된 JSON 응답
+        
+    Raises:
+        ValueError: API 호출 실패 시
+    """
+    try:
+        print(f"📰 {provider_name} API 호출: params={params}")
+        response = requests.get(url, params=params, headers=headers, timeout=timeout)
+        print(f"요청 URL: {response.url}")
+        print(f"응답 상태 코드: {response.status_code}")
+        
+        response.raise_for_status()
+        return response.json()
+        
+    except requests.exceptions.RequestException as e:
+        response = getattr(e, 'response', None)
+        raise handle_api_error(e, provider_name, response)
+    except Exception as e:
+        raise ValueError(f"{provider_name} API 요청 실패: {str(e)}")
+
+
+def _build_standard_article(
+    title: str,
+    content: str,
+    source: str,
+    url: str,
+    published_at: Optional[datetime]
+) -> dict:
+    """
+    표준화된 뉴스 기사 딕셔너리를 생성합니다.
+    
+    Args:
+        title: 기사 제목
+        content: 기사 내용
+        source: 출처
+        url: 기사 URL
+        published_at: 발행 날짜
+        
+    Returns:
+        표준화된 기사 딕셔너리
+    """
+    return {
+        "title": title,
+        "content": content,
+        "source": source,
+        "url": url,
+        "published_at": published_at,
+    }
+
+
+# ============================================================================
 # 뉴스 제공자 인터페이스 및 구현
 # ============================================================================
 
@@ -271,89 +344,6 @@ class BaseNewsProvider(ABC):
         raise NotImplementedError
 
 
-def fetch_news_from_newsdata(query: str = "주식", size: int = 10) -> List[dict]:
-    """
-    newsdata.io API에서 최신 뉴스를 가져옵니다.
-    
-    Args:
-        query: 검색 쿼리
-        size: 가져올 뉴스 개수 (1-10, 무료 티어 제한)
-    
-    Returns:
-        뉴스 기사 리스트
-        
-    Raises:
-        ValueError: API 호출 실패 시
-    """
-    if not NEWSDATA_API_KEY:
-        raise ValueError("NEWSDATA_API_KEY 환경 변수가 설정되지 않았습니다.")
-    
-    if not (1 <= size <= NEWSDATA_MAX_SIZE):
-        raise ValueError(f"size는 1-{NEWSDATA_MAX_SIZE} 사이의 값이어야 합니다. (무료 티어 제한) 현재 값: {size}")
-    
-    params = {
-        "apikey": NEWSDATA_API_KEY,
-        "q": query,
-        "country": "kr",
-        "language": "ko",
-        "timezone": "asia/seoul",
-        "image": 0,
-        "video": 0,
-        "removeduplicate": 1,
-        "size": size,
-    }
-    
-    try:
-        print(f"📰 newsdata.io API 호출: query={query}, size={size}")
-        response = requests.get(NEWSDATA_API_URL, params=params, timeout=REQUEST_TIMEOUT)
-        print(f"요청 URL: {response.url}")
-        
-        print(f"응답 상태 코드: {response.status_code}")
-        
-        # 422 에러 특별 처리
-        if response.status_code == 422:
-            try:
-                error_data = response.json()
-                error_message = error_data.get("message", "파라미터 오류")
-                raise ValueError(f"newsdata.io API 파라미터 오류: {error_message}")
-            except Exception:
-                raise ValueError(f"newsdata.io API 파라미터 오류: {response.text}")
-        
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get("status") != "success":
-            error_message = data.get("message", "알 수 없는 오류")
-            raise ValueError(f"newsdata.io API 오류: {error_message}")
-        
-        results = data.get("results", [])
-        total_results = data.get("totalResults", 0)
-        print(f"✅ API 응답 성공: 총 {total_results}개 결과, {len(results)}개 반환")
-        
-        articles = []
-        for item in results:
-            published_at = parse_datetime(item.get("pubDate", ""))
-            
-            articles.append({
-                "title": item.get("title", ""),
-                "content": item.get("description", ""),
-                "source": item.get("source_id", ""),
-                "url": item.get("link", ""),
-                "published_at": published_at,
-            })
-        
-        print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
-        return articles
-        
-    except requests.exceptions.RequestException as e:
-        response = getattr(e, 'response', None)
-        raise handle_api_error(e, "newsdata.io", response)
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"newsdata.io API 요청 실패: {str(e)}")
-
-
 class NewsdataProvider(BaseNewsProvider):
     """newsdata.io 기반 뉴스 제공자."""
 
@@ -362,85 +352,88 @@ class NewsdataProvider(BaseNewsProvider):
     max_size = NEWSDATA_MAX_SIZE
 
     def fetch(self, query: str = "주식", size: int = 10) -> List[dict]:
-        return fetch_news_from_newsdata(query=query, size=size)
-
-
-def fetch_news_from_naver(query: str = "주식", size: int = 10) -> List[dict]:
-    """
-    Naver 뉴스 검색 API에서 최신 뉴스를 가져옵니다.
-    
-    Args:
-        query: 검색 쿼리
-        size: 가져올 뉴스 개수 (1-100)
-    
-    Returns:
-        뉴스 기사 리스트
+        """
+        newsdata.io API에서 최신 뉴스를 가져옵니다.
         
-    Raises:
-        ValueError: API 호출 실패 시
-    """
-    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-        raise ValueError("NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET 환경 변수가 설정되지 않았습니다.")
-    
-    if not (1 <= size <= NAVER_MAX_SIZE):
-        raise ValueError(f"size는 1-{NAVER_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
-    
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
-    }
-    
-    params = {
-        "query": query,
-        "display": min(size, NAVER_MAX_SIZE),
-        "sort": "date",
-        "start": 1,
-    }
-    
-    try:
-        print(f"📰 Naver API 호출: query={query}, size={size}")
-        response = requests.get(NAVER_API_URL, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
-        print(f"요청 URL: {response.url}")
+        Args:
+            query: 검색 쿼리
+            size: 가져올 뉴스 개수 (1-10, 무료 티어 제한)
         
-        print(f"응답 상태 코드: {response.status_code}")
-        response.raise_for_status()
-        
-        data = response.json()
-        items = data.get("items", [])
-        total_results = data.get("total", 0)
-        
-        print(f"✅ API 응답 성공: 총 {total_results}개 결과, {len(items)}개 반환")
-        
-        articles = []
-        for item in items:
-            title = clean_html_tags(item.get("title", ""))
-            description = clean_html_tags(item.get("description", ""))
-            originallink = item.get("originallink", "")
-            link = item.get("link", "")
-            url = originallink if originallink else link
-            published_at = parse_datetime(item.get("pubDate", ""))
+        Returns:
+            뉴스 기사 리스트
             
-            # originallink에서 도메인 추출
-            source = extract_domain_from_url(originallink) if originallink else ""
+        Raises:
+            ValueError: API 호출 실패 시
+        """
+        if not NEWSDATA_API_KEY:
+            raise ValueError("NEWSDATA_API_KEY 환경 변수가 설정되지 않았습니다.")
+        
+        if not (1 <= size <= NEWSDATA_MAX_SIZE):
+            raise ValueError(f"size는 1-{NEWSDATA_MAX_SIZE} 사이의 값이어야 합니다. (무료 티어 제한) 현재 값: {size}")
+        
+        params = {
+            "apikey": NEWSDATA_API_KEY,
+            "q": query,
+            "country": "kr",
+            "language": "ko",
+            "timezone": "asia/seoul",
+            "image": 0,
+            "video": 0,
+            "removeduplicate": 1,
+            "size": size,
+        }
+        
+        try:
+            # 422 에러 특별 처리를 위해 직접 요청 처리
+            print(f"📰 {self.name} API 호출: query={query}, size={size}")
+            response = requests.get(NEWSDATA_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+            print(f"요청 URL: {response.url}")
+            print(f"응답 상태 코드: {response.status_code}")
             
-            articles.append({
-                "title": title,
-                "content": description,
-                "source": source,
-                "url": url,
-                "published_at": published_at,
-            })
-        
-        print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
-        return articles
-        
-    except requests.exceptions.RequestException as e:
-        response = getattr(e, 'response', None)
-        raise handle_api_error(e, "Naver", response)
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"Naver API 요청 실패: {str(e)}")
+            # 422 에러 특별 처리
+            if response.status_code == 422:
+                try:
+                    error_data = response.json()
+                    error_message = error_data.get("message", "파라미터 오류")
+                    raise ValueError(f"newsdata.io API 파라미터 오류: {error_message}")
+                except ValueError:
+                    raise
+                except Exception:
+                    raise ValueError(f"newsdata.io API 파라미터 오류: {response.text}")
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("status") != "success":
+                error_message = data.get("message", "알 수 없는 오류")
+                raise ValueError(f"newsdata.io API 오류: {error_message}")
+            
+            results = data.get("results", [])
+            total_results = data.get("totalResults", 0)
+            print(f"✅ API 응답 성공: 총 {total_results}개 결과, {len(results)}개 반환")
+            
+            articles = []
+            for item in results:
+                published_at = parse_datetime(item.get("pubDate", ""))
+                articles.append(_build_standard_article(
+                    title=item.get("title", ""),
+                    content=item.get("description", ""),
+                    source=item.get("source_id", ""),
+                    url=item.get("link", ""),
+                    published_at=published_at
+                ))
+            
+            print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
+            return articles
+            
+        except requests.exceptions.RequestException as e:
+            response = getattr(e, 'response', None)
+            raise handle_api_error(e, self.name, response)
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"{self.name} API 요청 실패: {str(e)}")
+
 
 
 class NaverProvider(BaseNewsProvider):
@@ -451,91 +444,71 @@ class NaverProvider(BaseNewsProvider):
     max_size = NAVER_MAX_SIZE
 
     def fetch(self, query: str = "주식", size: int = 10) -> List[dict]:
-        return fetch_news_from_naver(query=query, size=size)
-
-def fetch_news_from_newsorg(query: str = "주식", size: int = 10) -> List[dict]:
-    """
-    NewsAPI.org (NewsOrg)에서 최신 뉴스를 가져옵니다.
-    Top-headlines 엔드포인트를 사용하여 한국(kr) 뉴스를 수집합니다.
-    
-    Args:
-        query: 검색 쿼리
-        size: 가져올 뉴스 개수 (1-100)
-    
-    Returns:
-        뉴스 기사 리스트
+        """
+        Naver 뉴스 검색 API에서 최신 뉴스를 가져옵니다.
         
-    Raises:
-        ValueError: API 호출 실패 시
-    """
-    if not NEWSORG_API_KEY:
-        raise ValueError("NEWSORG_API_KEY 환경 변수가 설정되지 않았습니다.")
-    
-    if not (1 <= size <= NEWSORG_MAX_SIZE):
-        raise ValueError(f"size는 1-{NEWSORG_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
-    
-    params = {
-        "apiKey": NEWSORG_API_KEY,
-        "q": query,
-        "pageSize": min(size, NEWSORG_MAX_SIZE),
-        "sortBy": "publishedAt",
-    }
-    
-    try:
-        print(f"📰 NewsAPI.org (NewsOrg) 호출: query={query}, size={size}")
-        response = requests.get(NEWSORG_API_URL, params=params, timeout=REQUEST_TIMEOUT)
-        print(f"요청 URL: {response.url}")
+        Args:
+            query: 검색 쿼리
+            size: 가져올 뉴스 개수 (1-100)
         
-        print(f"응답 상태 코드: {response.status_code}")
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if data.get("status") != "ok":
-            error_message = data.get("message", "알 수 없는 오류")
-            raise ValueError(f"NewsAPI.org API 오류: {error_message}")
+        Returns:
+            뉴스 기사 리스트
             
-        articles_data = data.get("articles", [])
-        total_results = data.get("totalResults", 0)
+        Raises:
+            ValueError: API 호출 실패 시
+        """
+        if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+            raise ValueError("NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET 환경 변수가 설정되지 않았습니다.")
         
-        print(f"✅ API 응답 성공: 총 {total_results}개 결과, {len(articles_data)}개 반환")
+        if not (1 <= size <= NAVER_MAX_SIZE):
+            raise ValueError(f"size는 1-{NAVER_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
         
-        articles = []
-        for item in articles_data:
-            title = item.get("title", "")
-            description = item.get("description", "")
-            url = item.get("url", "")
-            published_at = parse_datetime(item.get("publishedAt", ""))
+        headers = {
+            "X-Naver-Client-Id": NAVER_CLIENT_ID,
+            "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+        }
+        
+        params = {
+            "query": query,
+            "display": min(size, NAVER_MAX_SIZE),
+            "sort": "date",
+            "start": 1,
+        }
+        
+        try:
+            data = _make_api_request(NAVER_API_URL, params, headers, self.name)
             
-            # source 정보 추출
-            source_info = item.get("source", {})
-            if isinstance(source_info, dict):
-                source = source_info.get("name", "")
-            else:
-                source = str(source_info) if source_info else ""
+            items = data.get("items", [])
+            total_results = data.get("total", 0)
+            print(f"✅ API 응답 성공: 총 {total_results}개 결과, {len(items)}개 반환")
             
-            # source가 비어있으면 URL에서 도메인 추출
-            if not source and url:
-                source = extract_domain_from_url(url)
+            articles = []
+            for item in items:
+                title = clean_html_tags(item.get("title", ""))
+                description = clean_html_tags(item.get("description", ""))
+                originallink = item.get("originallink", "")
+                link = item.get("link", "")
+                url = originallink if originallink else link
+                published_at = parse_datetime(item.get("pubDate", ""))
+                
+                # originallink에서 도메인 추출
+                source = extract_domain_from_url(originallink) if originallink else ""
+                
+                articles.append(_build_standard_article(
+                    title=title,
+                    content=description,
+                    source=source,
+                    url=url,
+                    published_at=published_at
+                ))
             
-            articles.append({
-                "title": title,
-                "content": description,
-                "source": source,
-                "url": url,
-                "published_at": published_at,
-            })
-        
-        print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
-        return articles
-        
-    except requests.exceptions.RequestException as e:
-        response = getattr(e, 'response', None)
-        raise handle_api_error(e, "NewsAPI.org", response)
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"NewsAPI.org API 요청 실패: {str(e)}")
+            print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
+            return articles
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"{self.name} API 요청 실패: {str(e)}")
 
 
 class NewsOrgProvider(BaseNewsProvider):
@@ -546,95 +519,78 @@ class NewsOrgProvider(BaseNewsProvider):
     max_size = NEWSORG_MAX_SIZE
 
     def fetch(self, query: str = "주식", size: int = 10) -> List[dict]:
-        return fetch_news_from_newsorg(query=query, size=size)
+        """
+        NewsAPI.org (NewsOrg)에서 최신 뉴스를 가져옵니다.
+        
+        Args:
+            query: 검색 쿼리
+            size: 가져올 뉴스 개수 (1-100)
+        
+        Returns:
+            뉴스 기사 리스트
+            
+        Raises:
+            ValueError: API 호출 실패 시
+        """
+        if not NEWSORG_API_KEY:
+            raise ValueError("NEWSORG_API_KEY 환경 변수가 설정되지 않았습니다.")
+        
+        if not (1 <= size <= NEWSORG_MAX_SIZE):
+            raise ValueError(f"size는 1-{NEWSORG_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
+        
+        params = {
+            "apiKey": NEWSORG_API_KEY,
+            "q": query,
+            "pageSize": min(size, NEWSORG_MAX_SIZE),
+            "sortBy": "publishedAt",
+        }
+        
+        try:
+            data = _make_api_request(NEWSORG_API_URL, params, None, self.name)
+            
+            if data.get("status") != "ok":
+                error_message = data.get("message", "알 수 없는 오류")
+                raise ValueError(f"NewsAPI.org API 오류: {error_message}")
+                
+            articles_data = data.get("articles", [])
+            total_results = data.get("totalResults", 0)
+            print(f"✅ API 응답 성공: 총 {total_results}개 결과, {len(articles_data)}개 반환")
+            
+            articles = []
+            for item in articles_data:
+                title = item.get("title", "")
+                description = item.get("description", "")
+                url = item.get("url", "")
+                published_at = parse_datetime(item.get("publishedAt", ""))
+                
+                # source 정보 추출
+                source_info = item.get("source", {})
+                if isinstance(source_info, dict):
+                    source = source_info.get("name", "")
+                else:
+                    source = str(source_info) if source_info else ""
+                
+                # source가 비어있으면 URL에서 도메인 추출
+                if not source and url:
+                    source = extract_domain_from_url(url)
+                
+                articles.append(_build_standard_article(
+                    title=title,
+                    content=description,
+                    source=source,
+                    url=url,
+                    published_at=published_at
+                ))
+            
+            print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
+            return articles
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"{self.name} API 요청 실패: {str(e)}")
 
 
-
-def fetch_news_from_thenewsapi(query: str = "주식", size: int = 10) -> List[dict]:
-    """
-    The News API에서 최신 뉴스를 가져옵니다.
-    
-    Args:
-        query: 검색 쿼리
-        size: 가져올 뉴스 개수 (1-50)
-    
-    Returns:
-        뉴스 기사 리스트
-        
-    Raises:
-        ValueError: API 호출 실패 시
-    """
-    if not THENEWSAPI_API_KEY:
-        raise ValueError("THENEWSAPI_API_KEY 환경 변수가 설정되지 않았습니다.")
-    
-    if not (1 <= size <= THENEWSAPI_MAX_SIZE):
-        raise ValueError(f"size는 1-{THENEWSAPI_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
-    
-    params = {
-        "api_token": THENEWSAPI_API_KEY,
-        "search": query,
-        "language": "ko",  # 한국어
-        "locale": "kr",    # 한국 지역
-        "limit": min(size, THENEWSAPI_MAX_SIZE),
-        "sort": "published_at",  # 최신순 정렬 (검색 시 기본값은 relevance_score임)
-    }
-    
-    try:
-        print(f"📰 The News API 호출: query={query}, size={size}")
-        response = requests.get(THENEWSAPI_API_URL, params=params, timeout=REQUEST_TIMEOUT)
-        print(f"요청 URL: {response.url}")
-        
-        print(f"응답 상태 코드: {response.status_code}")
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        # The News API 응답 형식 확인
-        articles_data = data.get("data", [])
-        meta = data.get("meta", {})
-        found = meta.get("found", 0)
-        
-        print(f"✅ API 응답 성공: 총 {found}개 결과, {len(articles_data)}개 반환")
-        
-        articles = []
-        for item in articles_data:
-            title = item.get("title", "")
-            snippet = item.get("snippet", "")
-            description = item.get("description", "")
-            # snippet 또는 description을 content로 사용
-            content = snippet or description or ""
-            url = item.get("url", "")
-            published_at = parse_datetime(item.get("published_at", ""))
-            
-            # source 정보 추출
-            source_info = item.get("source", {})
-            if isinstance(source_info, dict):
-                source = source_info.get("name", "")
-            else:
-                source = str(source_info) if source_info else ""
-            
-            # source가 비어있으면 URL에서 도메인 추출
-            if not source and url:
-                source = extract_domain_from_url(url)
-            
-            articles.append({
-                "title": title,
-                "content": content,
-                "source": source,
-                "url": url,
-                "published_at": published_at,
-            })
-        
-        print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
-        return articles
-        
-    except requests.exceptions.RequestException as e:
-        response = getattr(e, 'response', None)
-        raise handle_api_error(e, "The News API", response)
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"The News API 요청 실패: {str(e)}")
 
 
 class TheNewsAPIProvider(BaseNewsProvider):
@@ -645,7 +601,77 @@ class TheNewsAPIProvider(BaseNewsProvider):
     max_size = THENEWSAPI_MAX_SIZE
 
     def fetch(self, query: str = "주식", size: int = 10) -> List[dict]:
-        return fetch_news_from_thenewsapi(query=query, size=size)
+        """
+        The News API에서 최신 뉴스를 가져옵니다.
+        
+        Args:
+            query: 검색 쿼리
+            size: 가져올 뉴스 개수 (1-50)
+        
+        Returns:
+            뉴스 기사 리스트
+            
+        Raises:
+            ValueError: API 호출 실패 시
+        """
+        if not THENEWSAPI_API_KEY:
+            raise ValueError("THENEWSAPI_API_KEY 환경 변수가 설정되지 않았습니다.")
+        
+        if not (1 <= size <= THENEWSAPI_MAX_SIZE):
+            raise ValueError(f"size는 1-{THENEWSAPI_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
+        
+        params = {
+            "api_token": THENEWSAPI_API_KEY,
+            "search": query,
+            "language": "ko",
+            "locale": "kr",
+            "limit": min(size, THENEWSAPI_MAX_SIZE),
+            "sort": "published_at",
+        }
+        
+        try:
+            data = _make_api_request(THENEWSAPI_API_URL, params, None, self.name)
+            
+            articles_data = data.get("data", [])
+            meta = data.get("meta", {})
+            found = meta.get("found", 0)
+            print(f"✅ API 응답 성공: 총 {found}개 결과, {len(articles_data)}개 반환")
+            
+            articles = []
+            for item in articles_data:
+                title = item.get("title", "")
+                snippet = item.get("snippet", "")
+                description = item.get("description", "")
+                content = snippet or description or ""
+                url = item.get("url", "")
+                published_at = parse_datetime(item.get("published_at", ""))
+                
+                # source 정보 추출
+                source_info = item.get("source", {})
+                if isinstance(source_info, dict):
+                    source = source_info.get("name", "")
+                else:
+                    source = str(source_info) if source_info else ""
+                
+                # source가 비어있으면 URL에서 도메인 추출
+                if not source and url:
+                    source = extract_domain_from_url(url)
+                
+                articles.append(_build_standard_article(
+                    title=title,
+                    content=content,
+                    source=source,
+                    url=url,
+                    published_at=published_at
+                ))
+            
+            print(f"✅ 파싱된 뉴스 기사: {len(articles)}개")
+            return articles
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"{self.name} API 요청 실패: {str(e)}")
 
 
 def get_default_providers() -> List[BaseNewsProvider]:
@@ -927,6 +953,49 @@ def save_news_to_db(db: Session, articles: List[dict]) -> List[NewsArticle]:
         print(f"⚠️  뉴스 저장 실패 (전체 롤백): {error_msg}")
         raise
 
+def _fetch_from_provider_safe(
+    provider: BaseNewsProvider, 
+    queries: List[str], 
+    size: int
+) -> List[dict]:
+    """
+    Provider에서 뉴스를 안전하게 수집합니다. (예외 처리 포함)
+    
+    Args:
+        provider: 뉴스 Provider 객체
+        queries: 검색 쿼리 리스트
+        size: 가져올 뉴스 개수
+        
+    Returns:
+        수집된 뉴스 기사 리스트 (실패 시 빈 리스트)
+    """
+    # Provider 특성에 따른 쿼리 변환
+    if provider.supports_or:
+        transformed_query = " OR ".join(queries)
+    else:
+        transformed_query = queries[0]
+    
+    try:
+        print(f"▶ 뉴스 수집: provider={provider.name}, query={transformed_query}, target_size={size} (Fair Share)")
+        provider_articles = provider.fetch(query=transformed_query, size=size)
+
+        # Provider 이름을 정규화하고 각 article에 추가
+        provider_name_normalized = normalize_provider_name(provider.name)
+        
+        for article in provider_articles:
+            article["provider"] = provider_name_normalized
+            if not article.get("source"):
+                article["source"] = provider.name
+        
+        num_fetched = len(provider_articles)
+        print(f"✅ {provider.name}에서 {num_fetched}개 기사를 가져왔습니다.")
+        return provider_articles
+        
+    except Exception as e:
+        # 개별 Provider 실패는 로그만 남기고 계속 진행
+        print(f"⚠️  뉴스 제공자 '{provider.name}' 수집 실패: {e}")
+        return []
+
 
 # ============================================================================
 # 메인 수집 함수
@@ -971,57 +1040,21 @@ def collect_news(db: Session, query: str = "주식", size: int = 10) -> List[New
             queries = ["주식"]
 
         collected_articles: List[dict] = []
-        remaining_size = size
         
-        # for loop에서 남은 provider 수를 계산하기 위해 list로 변환 (이미 list임)
-        total_providers = len(providers)
-
-        for i, provider in enumerate(providers):
-            if remaining_size <= 0:
-                print(f"이미 {size}개의 뉴스를 수집했습니다. {provider.name} 수집을 건너뜁니다.")
-                break
-
-            # 남은 Provider 수 (현재 Provider 포함)
-            remaining_providers_count = total_providers - i
+        # 모든 Provider에서 가능한 최대 개수 수집
+        for provider in providers:
+            # 각 Provider의 최대 한도만큼 요청
+            allocated_size = provider.max_size
             
-            # 동적 균등 할당 (Dynamic Fair Share)
-            # 남은 개수를 남은 Provider 수로 나누어 올림 처리
-            # 예: 남은 18개, 남은 Provider 3명 -> 6개씩
-            fair_share = math.ceil(remaining_size / remaining_providers_count)
+            # Provider에서 뉴스 수집
+            provider_articles = _fetch_from_provider_safe(
+                provider=provider,
+                queries=queries,
+                size=allocated_size
+            )
             
-            # 해당 Provider의 한도 내에서 할당량 제한
-            allocated_size = min(fair_share, provider.max_size)
-            
-            if allocated_size <= 0:
-                continue
-
-            try:
-                # Provider 특성에 따른 쿼리 변환
-                if provider.supports_or:
-                    transformed_query = " OR ".join(queries)
-                else:
-                    transformed_query = queries[0]
-                
-                print(f"▶ 뉴스 수집: provider={provider.name}, query={transformed_query}, target_size={allocated_size} (Fair Share)")
-                provider_articles = provider.fetch(query=transformed_query, size=allocated_size)
-
-                # Provider 이름을 정규화하고 각 article에 추가
-                provider_name_normalized = normalize_provider_name(provider.name)
-                
-                for article in provider_articles:
-                    article["provider"] = provider_name_normalized
-                    if not article.get("source"):
-                        article["source"] = provider.name
-                
-                num_fetched = len(provider_articles)
-                print(f"✅ {provider.name}에서 {num_fetched}개 기사를 가져왔습니다.")
-                
+            if provider_articles:
                 collected_articles.extend(provider_articles)
-                remaining_size -= num_fetched
-                
-            except Exception as e:
-                # 개별 Provider 실패는 로그만 남기고 계속 진행
-                print(f"⚠️  뉴스 제공자 '{provider.name}' 수집 실패: {e}")
 
         if not collected_articles:
             raise ValueError(
@@ -1032,11 +1065,6 @@ def collect_news(db: Session, query: str = "주식", size: int = 10) -> List[New
         # 데이터베이스에 저장 (URL 기반 중복 제거 포함)
         # 이미 중복된 뉴스가 제외될 수 있으므로, 최종 반환된 저장 뉴스 개수가 size보다 적을 수 있음
         saved_articles = save_news_to_db(db, collected_articles)
-
-        # 만약 저장된 뉴스가 size보다 많다면 (API가 더 많이 줬거나 등) 잘라줌
-        saver_limit = size
-        if len(saved_articles) > saver_limit:
-            saved_articles = saved_articles[:saver_limit]
 
         print(f"✅ 뉴스 수집 완료 (멀티 Provider): {len(saved_articles)}개 최종 저장됨")
         return saved_articles
