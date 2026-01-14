@@ -58,12 +58,12 @@
   - [x] newsdata.io API 연동 (최신 뉴스 데이터 가져오기)
   - [x] 뉴스 데이터에서 title, description 추출 함수
   - [x] 뉴스 저장 함수 (title, description 포함)
-- [x] 뉴스 수집 API 엔드포인트 (`routers/news.py`)
+  - [x] 뉴스 수집 API 엔드포인트 (`routers/news.py`)
   - [x] `POST /api/get_news` 엔드포인트 구현 (뉴스 수집)
     - [x] newsdata.io API로 최신 뉴스 데이터 수집
     - [x] 뉴스 데이터에서 title, description 추출
     - [x] 관계형 DB (PostgreSQL)에 저장
-    - [ ] 벡터 DB (pgvector)에 저장 (metadata 포함)
+    - [x] 벡터 DB (pgvector)에 저장 (metadata 포함)
   - [x] `GET /api/news` 엔드포인트 구현 (저장된 뉴스 조회)
     - [x] DB에 저장된 뉴스 기사 목록 조회
     - [x] 필터링 옵션 (날짜, 키워드 등)
@@ -82,14 +82,14 @@
     - [x] LLM이 날짜를 파악할 수 있도록 날짜 정보 포함 (`published_date`)
     - [x] 참조한 기사의 원문 링크 리스트 포함 (`source_url`)
     - [x] 수집 시간 정보 포함 (`collected_at`)
-- [ ] 스케줄러 구현 (`app/scheduler.py`)
-  - [ ] 1시간마다 `POST /api/get_news` 엔드포인트 호출하는 크론잡
-  - [ ] 매일 아침 6시 보고서 생성 스케줄러
+- [x] 스케줄러 구현 (`app/scheduler.py`)
+  - [x] 1시간마다 `POST /api/get_news` 엔드포인트 호출하는 크론잡
+  - [x] 매일 아침 6시 보고서 생성 스케줄러
   - [ ] 매일 아침 7시 이메일 전송 스케줄러
-- [ ] Background Tasks 설정 (APScheduler 사용)
-  - [ ] APScheduler 설치 및 설정
-  - [ ] FastAPI 앱 시작 시 스케줄러 초기화
-  - [ ] 비동기 작업 스케줄링 (AsyncIOScheduler)
+- [x] Background Tasks 설정 (APScheduler 사용)
+  - [x] APScheduler 설치 및 설정
+  - [x] FastAPI 앱 시작 시 스케줄러 초기화
+  - [x] 비동기 작업 스케줄링 (AsyncIOScheduler)
 
 **체크포인트**: 자동 뉴스 수집 및 Vector DB 저장 동작
 
@@ -113,16 +113,16 @@
 
 **목표**: 일일 자동 분석 프로세스
 
-- [ ] 벡터 DB에서 뉴스 조회 (`app/analysis.py`)
-  - [ ] 현재 시간에서 전날 아침 6시 사이의 뉴스 기사 조회 (벡터 DB에서)
-  - [ ] 날짜 필터링 함수 (metadata의 published_date 활용)
-- [ ] OpenAI API 연동 (`app/analysis.py`)
-  - [ ] 프롬프트 작성
-  - [ ] 조회된 뉴스 기사들을 LLM에 전달
-  - [ ] LLM이 보고서 작성 (주식 동향 예측 분석)
-  - [ ] 산업/주식 분석 함수
-- [ ] 분석 결과 저장
-- [ ] 일일 분석 스케줄러 연동
+- [x] 벡터 DB에서 뉴스 조회 (`app/analysis.py`)
+  - [x] 현재 시간에서 전날 아침 6시 사이의 뉴스 기사 조회 (벡터 DB에서)
+  - [x] 날짜 필터링 함수 (metadata의 published_date 활용)
+- [x] OpenAI API 연동 (`app/analysis.py`)
+  - [x] 프롬프트 작성
+  - [x] 조회된 뉴스 기사들을 LLM에 전달
+  - [x] LLM이 보고서 작성 (주식 동향 예측 분석)
+  - [x] 산업/주식 분석 함수
+- [x] 분석 결과 저장
+- [x] 일일 분석 스케줄러 연동
 
 **체크포인트**: 매일 6시 자동 분석 (전날 아침 6시~현재 뉴스 활용) → DB 저장 플로우 동작
 

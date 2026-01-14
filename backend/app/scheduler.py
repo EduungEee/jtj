@@ -20,6 +20,58 @@ if backend_path not in sys.path:
 scheduler = AsyncIOScheduler(timezone=pytz.timezone('Asia/Seoul'))
 
 
+async def collect_news_hourly():
+    """
+    1시간마다 실행되는 뉴스 수집 작업.
+    POST /api/get_news API를 호출하여 최신 뉴스를 수집하고 저장합니다.
+    """
+    try:
+        print("=" * 60)
+        print(f"📰 뉴스 수집 스케줄러 실행: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 60)
+        
+        # API 엔드포인트 호출
+        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        get_news_url = f"{api_url}/api/get_news"
+        
+        # POST 요청 데이터 (기본 쿼리 및 크기)
+        request_data = {
+            "query": "주식 OR 증시 OR 코스피 OR 코스닥 OR 반도체 OR 경제 OR 금리 OR 부동산 OR 주가 OR 투자",
+            "size": 10  # 무료 티어 제한: 최대 10개
+        }
+        
+        print(f"📡 API 호출: POST {get_news_url}")
+        print(f"   쿼리: {request_data['query']}")
+        print(f"   크기: {request_data['size']}")
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:  # 1분 타임아웃
+            response = await client.post(get_news_url, json=request_data)
+            
+            if response.status_code == 200:
+                result = response.json()
+                collected_count = result.get("collected_count", 0)
+                print(f"✅ 뉴스 수집 완료: {collected_count}개 저장됨")
+                print("=" * 60)
+                return result
+            else:
+                error_detail = response.text
+                print(f"❌ API 호출 실패: {response.status_code}")
+                print(f"응답: {error_detail}")
+                print("=" * 60)
+                raise Exception(f"API 호출 실패 ({response.status_code}): {error_detail}")
+        
+    except httpx.TimeoutException:
+        print("❌ API 호출 타임아웃 (1분 초과)")
+        print("=" * 60)
+        raise
+    except Exception as e:
+        import traceback
+        print(f"❌ 뉴스 수집 중 오류 발생: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        print("=" * 60)
+        raise
+
+
 async def run_daily_analysis():
     """
     매일 아침 6시에 실행되는 일일 분석 작업.
@@ -81,6 +133,15 @@ def start_scheduler():
         print("⚠️  스케줄러가 이미 실행 중입니다.")
         return
     
+    # 1시간마다 뉴스 수집 실행
+    scheduler.add_job(
+        collect_news_hourly,
+        trigger=CronTrigger(minute=0, timezone='Asia/Seoul'),  # 매시간 정각
+        id='hourly_news_collection',
+        name='시간별 뉴스 수집',
+        replace_existing=True
+    )
+    
     # 매일 아침 6시에 일일 분석 실행
     scheduler.add_job(
         run_daily_analysis,
@@ -92,6 +153,7 @@ def start_scheduler():
     
     scheduler.start()
     print("✅ 스케줄러가 시작되었습니다.")
+    print("   - 매시간 정각(00분)에 뉴스 수집이 실행됩니다.")
     print("   - 매일 06:00에 일일 분석이 실행됩니다.")
 
 
