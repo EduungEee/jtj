@@ -18,7 +18,7 @@ export function Navbar() {
   const menuItemsRef = useRef<HTMLAnchorElement[]>([]);
 
   const navItems = [
-    { label: "오늘의 보고서", href: "#today-reports" },
+    { label: "최신 보고서", href: "#recent-reports" },
     { label: "서비스 소개", href: "#service-intro" },
     { label: "어떻게 작동하나요?", href: "#features" },
   ];

@@ -1,6 +1,6 @@
 import { Navbar } from "@/components/navbar";
 import { HeroSection } from "@/components/hero-section";
-import { TodayReportsSection } from "@/components/today-reports-section";
+import { RecentReportsSection } from "@/components/recent-reports-section";
 import { HowItWorks } from "@/components/how-it-works";
 import { CTASection } from "@/components/cta-section";
 
@@ -18,8 +18,8 @@ export default function Home() {
         {/* Hero 섹션 - 서비스 소개 */}
         <HeroSection />
 
-        {/* 오늘의 보고서 섹션 */}
-        <TodayReportsSection />
+        {/* 최신 보고서 섹션 */}
+        <RecentReportsSection />
 
         {/* 어떻게 작동하나요 섹션 */}
         <HowItWorks />

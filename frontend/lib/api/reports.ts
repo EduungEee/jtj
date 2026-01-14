@@ -78,6 +78,28 @@ export class ApiError extends Error {
 }
 
 /**
+ * 전체 보고서 목록을 조회합니다 (최신순).
+ */
+export async function getAllReports(limit: number = 10): Promise<ReportListItem[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/reports?limit=${limit}`, {
+      next: { revalidate: 60 }, // 60초마다 재검증
+    });
+
+    if (!response.ok) {
+      throw new ApiError(`Failed to fetch reports: ${response.statusText}`, response.status);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(`Network error: ${error instanceof Error ? error.message : "Unknown error"}`, 0);
+  }
+}
+
+/**
  * 오늘의 보고서 목록을 조회합니다.
  */
 export async function getTodayReports(): Promise<ReportListItem[]> {
