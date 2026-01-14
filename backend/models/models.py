@@ -30,6 +30,7 @@ class NewsArticle(Base):
     url = Column(String(1000))
     published_at = Column(TIMESTAMP)
     collected_at = Column(TIMESTAMP, server_default=func.now())
+    provider = Column(String(50))  # 뉴스 API 제공자 (newsdata, naver, gnews, thenewsapi)
     # embedding은 pgvector vector(1536) 타입이므로 SQLAlchemy 모델에서는 제외
     # SQL로 직접 저장/조회 (save_embedding_to_db 함수 사용)
     article_metadata = Column("metadata", JSONB)  # 벡터 DB metadata (title, url, published_date, collected_at 포함)
