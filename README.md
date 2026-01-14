@@ -47,11 +47,15 @@ npm run dev
 # Frontend: http://localhost:3000
 # Backend API (Swagger): http://localhost:8000/docs
 # 데이터베이스 관리: http://localhost:8081 (PgWeb)
+
+# docker-compose 재빌드
+docker-compose build --no-cache
 ```
 
 ## 📝 API 엔드포인트
 
 ### 뉴스 관련
+
 - `POST /api/get_news` - 뉴스 수집 엔드포인트
   - newsdata.io API로 최신 뉴스 데이터 수집
   - 뉴스 데이터에서 title, description 추출
@@ -62,6 +66,7 @@ npm run dev
   - 필터링 옵션 (날짜, 키워드 등)
 
 ### 보고서 관련
+
 - `GET /api/reports/today` - 오늘의 보고서 목록
 - `GET /api/report/{report_id}` - 보고서 상세
 - `POST /api/analyze` - 뉴스 분석 및 보고서 작성
@@ -71,6 +76,7 @@ npm run dev
   - 아침 6시에 트리거 됨
 
 ### 이메일 관련
+
 - `POST /api/send-email` - 이메일 전송 엔드포인트
   - 오늘 생성된 보고서 링크를 구독자 이메일로 전송
   - 외부 이메일 API 사용 (SendGrid/Resend)
