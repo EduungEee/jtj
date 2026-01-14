@@ -8,7 +8,7 @@
 
 ## ✨ 주요 기능
 
-- 📰 **자동 뉴스 수집**: 매시간 여러 뉴스 API를 통해 최신 뉴스 자동 수집 (NewsData, Naver, GNews, TheNewsAPI)
+- 📰 **자동 뉴스 수집**: 매시간 여러 뉴스 API를 통해 최신 뉴스 자동 수집 (NewsData, Naver, NewsAPI.org, TheNewsAPI)
   - **Orchestration**: 각 API의 사양에 따른 쿼리 변환 (OR 연산자 지원 등) 및 부족한 수량을 다음 API에서 보충하는 Greedy Filling 전략 사용
   - title, description 데이터 추출 및 pgvector/PostgreSQL 저장
 - 🤖 **자동 보고서 생성**: 매일 아침 6시에 보고서 생성
@@ -23,7 +23,7 @@
 - **Backend**: FastAPI, PostgreSQL + pgvector (Vector DB), OpenAI API
 - **Scheduler**: APScheduler (백그라운드 작업, 가볍고 FastAPI 통합 용이)
 - **Frontend**: Next.js 15 (App Router)
-- **기타**: Docker Compose, news API(NewsData, Naver, GNews, TheNewsAPI), SendGrid/Resend (이메일 API)
+- **기타**: Docker Compose, news API(NewsData, Naver, NewsAPI.org, TheNewsAPI), SendGrid/Resend (이메일 API)
 
 ## 🚀 빠른 시작
 
@@ -106,7 +106,7 @@ OPENAI_API_KEY=your_openai_api_key
 NEWSDATA_API_KEY=your_newsdata_api_key
 NAVER_CLIENT_ID=your_naver_client_id
 NAVER_CLIENT_SECRET=your_naver_client_secret
-GNEWS_API_KEY=your_gnews_api_key
+NEWSORG_API_KEY=your_newsorg_api_key
 THENEWSAPI_API_KEY=your_thenewsapi_api_key
 
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stock_analysis

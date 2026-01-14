@@ -8,7 +8,7 @@
 
 ## 🎯 핵심 기능 (MVP)
 
-1. ✅ **자동 뉴스 수집**: 매시간 여러 뉴스 API 소스(NewsData, Naver, GNews, TheNewsAPI)를 사용하여 최신 뉴스 수집
+1. ✅ **자동 뉴스 수집**: 매시간 여러 뉴스 API 소스(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 사용하여 최신 뉴스 수집
    - **Orchestration**: 각 API 사양에 맞는 쿼리 변환(OR 지원 등) 및 동적 수량 할당(Greedy Filling)
    - title, description 데이터 추출 및 pgvector/PostgreSQL 통합 관리
 2. ✅ **Vector DB 저장**: 수집된 뉴스의 meta description을 pgvector를 사용하여 PostgreSQL에 벡터 저장
@@ -57,7 +57,7 @@
   - [x] 뉴스 API 연동 (`app/news.py`)
     - [x] newsdata.io API 연동
     - [x] Naver 뉴스 API 연동
-    - [x] GNews API 연동
+    - [x] NewsAPI.org API 연동
     - [x] The News API 연동
     - [x] 뉴스 API 추상화 인터페이스 설계 (`BaseNewsProvider`)
     - [x] 각 API별 구현체 및 Orchestration logic (Query transformation, Greedy Filling)
@@ -358,7 +358,7 @@ CREATE TABLE email_subscriptions (
 ### 뉴스 관련
 
 - `POST /api/get_news` - 뉴스 수집 엔드포인트
-  - 멀티 API Provider(NewsData, Naver, GNews, TheNewsAPI)를 통한 뉴스 수집
+  - 멀티 API Provider(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 통한 뉴스 수집
   - Orchestration: 쿼리 변환(OR 지원), 동적 수량 할당(Greedy Filling)
   - 여러 API 소스에서 수집한 뉴스 통합 처리 및 중복 제거
   - 뉴스 데이터에서 title, description 추출
@@ -400,7 +400,7 @@ CREATE TABLE email_subscriptions (
 ### 자동 스케줄러
 
 - **뉴스 수집**: 매시간 자동 실행 (`POST /api/get_news` 호출)
-  - 멀티 API Provider(NewsData, Naver, GNews, TheNewsAPI)를 통한 뉴스 수집
+  - 멀티 API Provider(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 통한 뉴스 수집
   - Orchestration: 쿼리 변환(OR 지원), 동적 수량 할당(Greedy Filling)
   - 여러 API 소스에서 수집한 뉴스 통합 처리 및 중복 제거
   - 뉴스 데이터에서 title, description 추출
@@ -436,9 +436,10 @@ OPENAI_API_KEY=your_openai_api_key
 
 # 뉴스 API (여러 소스 지원)
 NEWSDATA_API_KEY=your_newsdata_api_key
-# 추가 뉴스 API 키 (예: NewsAPI, Alpha Vantage 등)
-# NEWS_API_KEY=your_news_api_key
-# ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key
+NEWSORG_API_KEY=your_newsorg_api_key
+THENEWSAPI_API_KEY=your_thenewsapi_api_key
+NAVER_CLIENT_ID=your_naver_client_id
+NAVER_CLIENT_SECRET=your_naver_client_secret
 
 # Database
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stock_analysis
@@ -532,7 +533,7 @@ CLERK_SECRET_KEY=your_clerk_secret_key
 ## 🎯 MVP 완성 기준
 
 - [x] 1시간마다 자동 뉴스 수집 동작 (`POST /api/get_news` 호출)
-- [x] 멀티 API Provider(NewsData, Naver, GNews, TheNewsAPI)를 통한 뉴스 수집
+- [x] 멀티 API Provider(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 통한 뉴스 수집
 - [x] Orchestration Logic: 쿼리 변환(OR 지원), 동적 수량 할당(Greedy Filling)
 - [x] 여러 API 소스에서 수집한 뉴스 통합 처리 및 중복 제거 동작
 - [ ] 뉴스 title, description을 관계형 DB와 벡터 DB에 저장

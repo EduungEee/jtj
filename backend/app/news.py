@@ -5,6 +5,7 @@
 import json
 import os
 import sys
+import math
 import traceback
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -34,9 +35,9 @@ NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 NAVER_API_URL = "https://openapi.naver.com/v1/search/news.json"
 NAVER_MAX_SIZE = 100
 
-GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
-GNEWS_API_URL = "https://gnews.io/api/v4/search"
-GNEWS_MAX_SIZE = 100
+NEWSORG_API_KEY = os.getenv("NEWSORG_API_KEY")
+NEWSORG_API_URL = "https://newsapi.org/v2/everything"
+NEWSORG_MAX_SIZE = 100
 
 THENEWSAPI_API_KEY = os.getenv("THENEWSAPI_API_KEY")
 THENEWSAPI_API_URL = "https://api.thenewsapi.com/v1/news/all"
@@ -219,8 +220,8 @@ def normalize_provider_name(provider_name: str) -> str:
     provider_mapping = {
         "newsdata.io": "newsdata",
         "Naver": "naver",
-        "GNews": "gnews",
         "The News API": "thenewsapi",
+        "NewsAPI.org": "newsorg",
     }
     
     # 매핑에 있으면 사용, 없으면 소문자로 변환하고 공백/점 제거
@@ -305,6 +306,7 @@ def fetch_news_from_newsdata(query: str = "주식", size: int = 10) -> List[dict
     try:
         print(f"📰 newsdata.io API 호출: query={query}, size={size}")
         response = requests.get(NEWSDATA_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+        print(f"요청 URL: {response.url}")
         
         print(f"응답 상태 코드: {response.status_code}")
         
@@ -398,6 +400,7 @@ def fetch_news_from_naver(query: str = "주식", size: int = 10) -> List[dict]:
     try:
         print(f"📰 Naver API 호출: query={query}, size={size}")
         response = requests.get(NAVER_API_URL, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
+        print(f"요청 URL: {response.url}")
         
         print(f"응답 상태 코드: {response.status_code}")
         response.raise_for_status()
@@ -450,10 +453,10 @@ class NaverProvider(BaseNewsProvider):
     def fetch(self, query: str = "주식", size: int = 10) -> List[dict]:
         return fetch_news_from_naver(query=query, size=size)
 
-
-def fetch_news_from_gnews(query: str = "주식", size: int = 10) -> List[dict]:
+def fetch_news_from_newsorg(query: str = "주식", size: int = 10) -> List[dict]:
     """
-    GNews API에서 최신 뉴스를 가져옵니다.
+    NewsAPI.org (NewsOrg)에서 최신 뉴스를 가져옵니다.
+    Top-headlines 엔드포인트를 사용하여 한국(kr) 뉴스를 수집합니다.
     
     Args:
         query: 검색 쿼리
@@ -465,37 +468,42 @@ def fetch_news_from_gnews(query: str = "주식", size: int = 10) -> List[dict]:
     Raises:
         ValueError: API 호출 실패 시
     """
-    if not GNEWS_API_KEY:
-        raise ValueError("GNEWS_API_KEY 환경 변수가 설정되지 않았습니다.")
+    if not NEWSORG_API_KEY:
+        raise ValueError("NEWSORG_API_KEY 환경 변수가 설정되지 않았습니다.")
     
-    if not (1 <= size <= GNEWS_MAX_SIZE):
-        raise ValueError(f"size는 1-{GNEWS_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
+    if not (1 <= size <= NEWSORG_MAX_SIZE):
+        raise ValueError(f"size는 1-{NEWSORG_MAX_SIZE} 사이의 값이어야 합니다. 현재 값: {size}")
     
     params = {
+        "apiKey": NEWSORG_API_KEY,
         "q": query,
-        "lang": "ko",  # 한국어
-        "max": min(size, GNEWS_MAX_SIZE),
-        "apikey": GNEWS_API_KEY,
+        "pageSize": min(size, NEWSORG_MAX_SIZE),
+        "sortBy": "publishedAt",
     }
     
     try:
-        print(f"📰 GNews API 호출: query={query}, size={size}")
-        response = requests.get(GNEWS_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+        print(f"📰 NewsAPI.org (NewsOrg) 호출: query={query}, size={size}")
+        response = requests.get(NEWSORG_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+        print(f"요청 URL: {response.url}")
         
         print(f"응답 상태 코드: {response.status_code}")
         response.raise_for_status()
         
         data = response.json()
-        articles_data = data.get("articles", [])
-        total_articles = data.get("totalArticles", 0)
         
-        print(f"✅ API 응답 성공: 총 {total_articles}개 결과, {len(articles_data)}개 반환")
+        if data.get("status") != "ok":
+            error_message = data.get("message", "알 수 없는 오류")
+            raise ValueError(f"NewsAPI.org API 오류: {error_message}")
+            
+        articles_data = data.get("articles", [])
+        total_results = data.get("totalResults", 0)
+        
+        print(f"✅ API 응답 성공: 총 {total_results}개 결과, {len(articles_data)}개 반환")
         
         articles = []
         for item in articles_data:
             title = item.get("title", "")
             description = item.get("description", "")
-            content = item.get("content", "") or description  # content가 없으면 description 사용
             url = item.get("url", "")
             published_at = parse_datetime(item.get("publishedAt", ""))
             
@@ -512,7 +520,7 @@ def fetch_news_from_gnews(query: str = "주식", size: int = 10) -> List[dict]:
             
             articles.append({
                 "title": title,
-                "content": content,
+                "content": description,
                 "source": source,
                 "url": url,
                 "published_at": published_at,
@@ -523,22 +531,23 @@ def fetch_news_from_gnews(query: str = "주식", size: int = 10) -> List[dict]:
         
     except requests.exceptions.RequestException as e:
         response = getattr(e, 'response', None)
-        raise handle_api_error(e, "GNews", response)
+        raise handle_api_error(e, "NewsAPI.org", response)
     except ValueError:
         raise
     except Exception as e:
-        raise ValueError(f"GNews API 요청 실패: {str(e)}")
+        raise ValueError(f"NewsAPI.org API 요청 실패: {str(e)}")
 
 
-class GNewsProvider(BaseNewsProvider):
-    """GNews API 기반 뉴스 제공자."""
+class NewsOrgProvider(BaseNewsProvider):
+    """NewsAPI.org 기반 뉴스 제공자."""
 
-    name = "GNews"
+    name = "NewsAPI.org"
     supports_or = True
-    max_size = GNEWS_MAX_SIZE
+    max_size = NEWSORG_MAX_SIZE
 
     def fetch(self, query: str = "주식", size: int = 10) -> List[dict]:
-        return fetch_news_from_gnews(query=query, size=size)
+        return fetch_news_from_newsorg(query=query, size=size)
+
 
 
 def fetch_news_from_thenewsapi(query: str = "주식", size: int = 10) -> List[dict]:
@@ -565,12 +574,15 @@ def fetch_news_from_thenewsapi(query: str = "주식", size: int = 10) -> List[di
         "api_token": THENEWSAPI_API_KEY,
         "search": query,
         "language": "ko",  # 한국어
+        "locale": "kr",    # 한국 지역
         "limit": min(size, THENEWSAPI_MAX_SIZE),
+        "sort": "published_at",  # 최신순 정렬 (검색 시 기본값은 relevance_score임)
     }
     
     try:
         print(f"📰 The News API 호출: query={query}, size={size}")
         response = requests.get(THENEWSAPI_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+        print(f"요청 URL: {response.url}")
         
         print(f"응답 상태 코드: {response.status_code}")
         response.raise_for_status()
@@ -651,8 +663,8 @@ def get_default_providers() -> List[BaseNewsProvider]:
     if NAVER_CLIENT_ID and NAVER_CLIENT_SECRET:
         providers.append(NaverProvider())
 
-    if GNEWS_API_KEY:
-        providers.append(GNewsProvider())
+    if NEWSORG_API_KEY:
+        providers.append(NewsOrgProvider())
 
     if THENEWSAPI_API_KEY:
         providers.append(TheNewsAPIProvider())
@@ -932,7 +944,10 @@ def collect_news(db: Session, query: str = "주식", size: int = 10) -> List[New
     - query에 ',' 단위로 여러 값을 주면 각 api 특성에 맞게 OR 연산자로 query를 변환.
     - 연산자를 지원하지 않는 api는 맨 앞의 쿼리만 적용.
     - 필요한 총 뉴스 갯수에 맞추어서 api에게 긁어올 뉴스 갯수를 할당.
-    - 특정 API에서 부족하게 가져오면 다른 API에서 부족한 만큼 채우기 (Greedy Filling).
+    - 균등 분배(Fair Distribution) 및 부족분 채우기(Deficit Filling):
+      - 남은 필요한 개수를 남은 API 개수로 나누어 할당 (올림 처리).
+      - 각 API는 할당된 양과 자신의 max_size 중 작은 값을 시도.
+      - 가져온 만큼 remaining_size를 줄여서, 다음 API가 부족분을 동적으로 더 가져오게 됨.
     
     Args:
         db: 데이터베이스 세션
@@ -957,23 +972,37 @@ def collect_news(db: Session, query: str = "주식", size: int = 10) -> List[New
 
         collected_articles: List[dict] = []
         remaining_size = size
+        
+        # for loop에서 남은 provider 수를 계산하기 위해 list로 변환 (이미 list임)
+        total_providers = len(providers)
 
-        for provider in providers:
+        for i, provider in enumerate(providers):
             if remaining_size <= 0:
                 print(f"이미 {size}개의 뉴스를 수집했습니다. {provider.name} 수집을 건너뜁니다.")
                 break
 
+            # 남은 Provider 수 (현재 Provider 포함)
+            remaining_providers_count = total_providers - i
+            
+            # 동적 균등 할당 (Dynamic Fair Share)
+            # 남은 개수를 남은 Provider 수로 나누어 올림 처리
+            # 예: 남은 18개, 남은 Provider 3명 -> 6개씩
+            fair_share = math.ceil(remaining_size / remaining_providers_count)
+            
+            # 해당 Provider의 한도 내에서 할당량 제한
+            allocated_size = min(fair_share, provider.max_size)
+            
+            if allocated_size <= 0:
+                continue
+
             try:
-                # 해당 Provider의 한도 내에서 최대한 가져오기
-                allocated_size = min(remaining_size, provider.max_size)
-                
                 # Provider 특성에 따른 쿼리 변환
                 if provider.supports_or:
                     transformed_query = " OR ".join(queries)
                 else:
                     transformed_query = queries[0]
                 
-                print(f"▶ 뉴스 수집: provider={provider.name}, query={transformed_query}, target_size={allocated_size}")
+                print(f"▶ 뉴스 수집: provider={provider.name}, query={transformed_query}, target_size={allocated_size} (Fair Share)")
                 provider_articles = provider.fetch(query=transformed_query, size=allocated_size)
 
                 # Provider 이름을 정규화하고 각 article에 추가
@@ -1005,9 +1034,9 @@ def collect_news(db: Session, query: str = "주식", size: int = 10) -> List[New
         saved_articles = save_news_to_db(db, collected_articles)
 
         # 만약 저장된 뉴스가 size보다 많다면 (API가 더 많이 줬거나 등) 잘라줌
-        # 하지만 save_news_to_db는 URL 중복을 체크하므로 여기서 숫자를 맞추는 것이 의미 있음
-        if len(saved_articles) > size:
-            saved_articles = saved_articles[:size]
+        saver_limit = size
+        if len(saved_articles) > saver_limit:
+            saved_articles = saved_articles[:saver_limit]
 
         print(f"✅ 뉴스 수집 완료 (멀티 Provider): {len(saved_articles)}개 최종 저장됨")
         return saved_articles

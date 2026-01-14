@@ -27,7 +27,7 @@ graph TB
     subgraph "External APIs"
         NewsDataAPI[NewsData.io API]
         NaverAPI[Naver News API]
-        GNewsAPI[GNews API]
+        NewsOrgAPI[NewsAPI.org API]
         TheNewsAPI[The News API]
         OpenAIAPI[OpenAI API]
     end
@@ -58,7 +58,7 @@ graph TB
     Routers --> Services
     Services -->|뉴스 수집| NewsDataAPI
     Services -->|뉴스 수집| NaverAPI
-    Services -->|뉴스 수집| GNewsAPI
+    Services -->|뉴스 수집| NewsOrgAPI
     Services -->|뉴스 수집| TheNewsAPI
     Services -->|AI 분석| OpenAIAPI
     Services -->|데이터 저장/조회| PostgreSQL
@@ -220,7 +220,7 @@ graph TB
         end
     end
 
-    GetNews -->|멀티 API Orchestration| ExternalAPIs[NewsData, Naver, GNews, TheNewsAPI]
+    GetNews -->|멀티 API Orchestration| ExternalAPIs[NewsData, Naver, NewsAPI.org, TheNewsAPI]
     GetNews -->|저장| DB1[(PostgreSQL<br/>+ pgvector)]
     NewsList -->|조회| DB1
     Analyze -->|벡터 DB 조회| DB1
@@ -357,7 +357,7 @@ graph TB
     subgraph "External Services"
         NewsData[NewsData.io API]
         Naver[네이버 뉴스 API]
-        GNews[GNews API]
+        NewsOrg[NewsAPI.org API]
         TheNewsAPI[The News API]
         OpenAI[OpenAI API]
     end
