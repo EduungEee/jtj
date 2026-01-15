@@ -123,3 +123,4 @@ FRONTEND_URL=http://localhost:3000
 ## 기여자
 
 - 박우림
+- 송민규
