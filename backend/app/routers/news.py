@@ -232,3 +232,20 @@ async def get_news(
             detail=f"뉴스 조회 중 오류 발생: {str(e)}"
         )
 
+
+@router.get("/news/count")
+async def get_news_count(
+    db: Session = Depends(get_db)
+):
+    """
+    저장된 뉴스 기사의 총 개수를 반환합니다.
+    """
+    try:
+        count = db.query(NewsArticle).count()
+        return {"count": count}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"뉴스 개수 조회 중 오류 발생: {str(e)}"
+        )
+

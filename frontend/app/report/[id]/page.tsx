@@ -214,7 +214,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
             </div>
 
             {/* 오른쪽: 영향받는 산업 사이드바 (모바일에서는 위로) */}
-            <div className="lg:w-80 lg:shrink-0 order-first lg:order-last">
+            <div className="lg:w-80 lg:shrink-0">
               <div className="lg:sticky lg:top-24">
                 {report.industries.length > 0 && <ImpactedIndustriesGrid industries={report.industries} />}
               </div>

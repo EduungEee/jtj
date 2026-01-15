@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, DATE, DECIMAL, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, DATE, DECIMAL, ForeignKey, Table, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -84,3 +84,13 @@ class ReportStock(Base):
 
     # 관계
     industry = relationship("ReportIndustry", back_populates="stocks")
+
+
+class User(Base):
+    __tablename__ = "email_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    clerk_user_id = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False)
+    subscribed_at = Column(TIMESTAMP, server_default=func.now())
+    is_active = Column(Boolean, default=True, nullable=False, index=True)

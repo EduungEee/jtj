@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.database import engine, Base
-from app.routers import health, analyze, reports, news
+from app.routers import health, analyze, reports, news, users
 from app.scheduler import start_scheduler, stop_scheduler
 import sys
 import os
@@ -73,6 +73,7 @@ app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(analyze.router, prefix="/api", tags=["analyze"])
 app.include_router(reports.router, prefix="/api", tags=["reports"])
 app.include_router(news.router, prefix="/api", tags=["news"])
+app.include_router(users.router, prefix="/api", tags=["users"])
 
 @app.on_event("startup")
 async def startup_event():
