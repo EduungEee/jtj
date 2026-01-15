@@ -48,7 +48,7 @@ export default async function Home() {
       {/* 푸터 */}
       <footer className="border-t mt-12 bg-background">
         <div className="container mx-auto px-4 py-6 text-center text-muted-foreground">
-          <p>© 2024 주식 동향 분석 서비스. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} 주식 동향 분석 서비스. All rights reserved.</p>
         </div>
       </footer>
     </div>
