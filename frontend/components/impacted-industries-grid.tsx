@@ -28,9 +28,7 @@ export function ImpactedIndustriesGrid({ industries }: ImpactedIndustriesGridPro
               <h3 className="font-semibold text-sm text-foreground">{industry.industry_name}</h3>
             </div>
             {industry.impact_description && (
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {industry.impact_description}
-              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{industry.impact_description}</p>
             )}
           </div>
         ))}

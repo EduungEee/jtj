@@ -1,4 +1,8 @@
+"use client";
+
 import { FiStar, FiArrowRight, FiTrendingUp, FiBarChart2 } from "react-icons/fi";
+import { SignUpButton, SignedIn, SignedOut } from "@clerk/nextjs";
+import Link from "next/link";
 
 /**
  * Hero 섹션 컴포넌트
@@ -29,10 +33,23 @@ export function HeroSection() {
 
         {/* CTA 버튼 */}
         <div className="mb-4">
-          <button className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
-            <span>회원가입하기</span>
-            <FiArrowRight className="w-5 h-5" />
-          </button>
+          <SignedOut>
+            <SignUpButton mode="modal">
+              <button className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
+                <span>로그인 하기</span>
+                <FiArrowRight className="w-5 h-5" />
+              </button>
+            </SignUpButton>
+          </SignedOut>
+          <SignedIn>
+            <Link
+              href="#recent-reports"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+            >
+              <span>보고서 보기</span>
+              <FiArrowRight className="w-5 h-5" />
+            </Link>
+          </SignedIn>
         </div>
 
         {/* 서브 텍스트 */}
