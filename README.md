@@ -124,3 +124,4 @@ FRONTEND_URL=http://localhost:3000
 
 - 박우림
 - 송민규
+- 류재상
