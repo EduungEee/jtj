@@ -34,10 +34,10 @@ cp .env.example .env
 # .env 파일에 API 키 설정
 
 # 2. Backend와 Database 실행 (Docker)
-docker-compose up -d
+docker compose up -d
 
 # 3. Backend 잘 실행됐는지 확인
-docker-compose logs -f backend
+docker compose logs -f backend
 
 # 3. Frontend 실행 (로컬)
 cd frontend
@@ -50,7 +50,7 @@ npm run dev
 # 데이터베이스 관리: http://localhost:8081 (PgWeb)
 
 # docker-compose 재빌드
-docker-compose build --no-cache
+docker compose build --no-cache
 ```
 
 ## 📝 API 엔드포인트

@@ -4,7 +4,6 @@ OpenAI API를 사용하여 뉴스를 분석하고 산업/주식 예측을 수행
 """
 import os
 import json
-import csv
 from typing import List, Dict, Optional, Tuple
 from openai import OpenAI
 from sqlalchemy.orm import Session
@@ -525,9 +524,6 @@ def analyze_news_with_ai(news_articles: List[NewsArticle]) -> Dict:
   불확실성이 크면 reasoning에 그 사실을 명시하라.
 - 신뢰도(confidence_score)가 낮은 경우(예: 0.4 미만)에는
   구체적인 매수/매도보다는 관찰·모니터링 대상으로 서술하라.
-- reasoning의 첫 문장은 반드시 impact_chain_level과 propagation_path 범위를 명시한다.
-- impact_chain_level보다 높은 단계(예: 1차 종목에서 2차·3차 영향)는
-  reasoning과 propagation_path 어디에도 언급하지 않는다.
 
 연쇄 영향 분석 기준 (필수):
 1) 1차 영향 (confidence_score ≥ 0.7 필수)
@@ -589,31 +585,24 @@ JSON 스키마:
                 "confidence_score": 0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0,
                 "impact_chain_level": 1 | 2 | 3,
                 "propagation_path": [
-                {
-                    "level": 1,
-                    "details": [
-                        "1차: 뉴스 직접 언급 → [구체적 사건]",
-                        "투자 논리: [매출/이익 영향 경로]",
-                        "신뢰도 근거: [뉴스 직접성/수치 명시]",
-                    ]
-                },
-                {
-                    "level": 2,
-                    "details": [
-                        "1차: [1차 산업/종목] 수요/공급 변화",
-                        "2차: [공급망 연결고리] → 본 종목 영향", 
-                        "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
-                    ]
-                },
-                {
-                    "level": 3,
-                    "details": [
-                        "1차: [1차 사건]",
-                        "2차: [2차 산업 영향]", 
-                        "3차: [인프라/후행 수혜] → 본 종목",
-                        "신뢰도 근거: [과거 유사 사례/투자 사이클]",
-                    ]
-                }
+                    {
+                        "level_1": {
+                            "1차: 뉴스 직접 언급 → [구체적 사건]",
+                            "투자 논리: [매출/이익 영향 경로]",
+                            "신뢰도 근거: [뉴스 직접성/수치 명시]",
+                        },
+                        "level_2": {
+                            "1차: [1차 산업/종목] 수요/공급 변화",
+                            "2차: [공급망 연결고리] → 본 종목 영향", 
+                            "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
+                        },
+                        "level_3": {
+                            "1차: [1차 사건]",
+                            "2차: [2차 산업 영향]", 
+                            "3차: [인프라/후행 수혜] → 본 종목",
+                            "신뢰도 근거: [과거 유사 사례/투자 사이클]",
+                        }
+                    }
                 ],
                 "reasoning": "string",
                 "news_drivers": ["string"],
@@ -635,31 +624,24 @@ JSON 스키마:
                 "confidence_score": 0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0,
                 "impact_chain_level": 1 | 2 | 3,
                 "propagation_path": [
-                {
-                    "level": 1,
-                    "details": [
-                        "1차: 뉴스 직접 언급 → [구체적 사건]",
-                        "투자 논리: [매출/이익 영향 경로]",
-                        "신뢰도 근거: [뉴스 직접성/수치 명시]",
-                    ]
-                },
-                {
-                    "level": 2,
-                    "details": [
-                        "1차: [1차 산업/종목] 수요/공급 변화",
-                        "2차: [공급망 연결고리] → 본 종목 영향", 
-                        "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
-                    ]
-                },
-                {
-                    "level": 3,
-                    "details": [
-                        "1차: [1차 사건]",
-                        "2차: [2차 산업 영향]", 
-                        "3차: [인프라/후행 수혜] → 본 종목",
-                        "신뢰도 근거: [과거 유사 사례/투자 사이클]",
-                    ]
-                }
+                    {
+                        "level_1": {
+                            "1차: 뉴스 직접 언급 → [구체적 사건]",
+                            "투자 논리: [매출/이익 영향 경로]",
+                            "신뢰도 근거: [뉴스 직접성/수치 명시]",
+                        },
+                        "level_2": {
+                            "1차: [1차 산업/종목] 수요/공급 변화",
+                            "2차: [공급망 연결고리] → 본 종목 영향", 
+                            "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
+                        },
+                        "level_3": {
+                            "1차: [1차 사건]",
+                            "2차: [2차 산업 영향]", 
+                            "3차: [인프라/후행 수혜] → 본 종목",
+                            "신뢰도 근거: [과거 유사 사례/투자 사이클]",
+                        }
+                    }
                 ],
                 "reasoning": "string",
                 "news_drivers": ["string"],
@@ -681,31 +663,24 @@ JSON 스키마:
                 "confidence_score": 0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0,
                 "impact_chain_level": 1 | 2 | 3,
                 "propagation_path": [
-                {
-                    "level": 1,
-                    "details": [
-                        "1차: 뉴스 직접 언급 → [구체적 사건]",
-                        "투자 논리: [매출/이익 영향 경로]",
-                        "신뢰도 근거: [뉴스 직접성/수치 명시]",
-                    ]
-                },
-                {
-                    "level": 2,
-                    "details": [
-                        "1차: [1차 산업/종목] 수요/공급 변화",
-                        "2차: [공급망 연결고리] → 본 종목 영향", 
-                        "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
-                    ]
-                },
-                {
-                    "level": 3,
-                    "details": [
-                        "1차: [1차 사건]",
-                        "2차: [2차 산업 영향]", 
-                        "3차: [인프라/후행 수혜] → 본 종목",
-                        "신뢰도 근거: [과거 유사 사례/투자 사이클]",
-                    ]
-                }
+                    {
+                        "level_1": {
+                            "1차: 뉴스 직접 언급 → [구체적 사건]",
+                            "투자 논리: [매출/이익 영향 경로]",
+                            "신뢰도 근거: [뉴스 직접성/수치 명시]",
+                        },
+                        "level_2": {
+                            "1차: [1차 산업/종목] 수요/공급 변화",
+                            "2차: [공급망 연결고리] → 본 종목 영향", 
+                            "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
+                        },
+                        "level_3": {
+                            "1차: [1차 사건]",
+                            "2차: [2차 산업 영향]", 
+                            "3차: [인프라/후행 수혜] → 본 종목",
+                            "신뢰도 근거: [과거 유사 사례/투자 사이클]",
+                        }
+                    }
                 ],
                 "reasoning": "string",
                 "news_drivers": ["string"],
@@ -763,24 +738,11 @@ JSON 스키마:
 {news_summary}
 [뉴스_데이터_끝]
 
-propagation_path 출력 규칙 (필수):
-
-- propagation_path에는 impact_chain_level 이하의 단계만 포함한다.
-- impact_chain_level = 1 인 경우:
-  → propagation_path에는 level 1만 포함하고, level 2·3은 절대 출력하지 않는다.
-- impact_chain_level = 2 인 경우:
-  → propagation_path에는 level 1, level 2까지만 포함하고 level 3은 출력하지 않는다.
-- impact_chain_level = 3 인 경우:
-  → propagation_path에는 level 1, level 2, level 3을 모두 포함할 수 있다.
-- 위 규칙을 어길 경우 출력은 무효로 간주한다.
-
 주의:
 - summary는 약 500~800자 분량으로 작성하되, JSON 구조를 깨지 않는 것을 최우선으로 한다.
 - industries 배열은 최소 1개 이상 포함하되, 의미 있는 산업만 넣는다.
 - 종목 코드가 불명확하면 "stock_code": "" 로 두고, reasoning에 그 이유를 적는다.
 - 유효한 JSON만 출력하고, 그 외 어떤 텍스트도 출력하지 않는다.
-- propagation_path 배열의 길이는 impact_chain_level 값과 정확히 일치해야 한다.
-    - 예: impact_chain_level = 1 → propagation_path 길이 = 1
 
 추가 요구사항:
 - 각 종목의 reasoning에는 반드시 다음 세 가지가 모두 포함되도록 하라.
@@ -872,100 +834,36 @@ json
 
     prompt = prompt_header + example_block
 
-    response = client.responses.create(
-        model="gpt-4.1",
-        input=[
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.7
-    )
-
-    # LLM 원본 텍스트
-    result_text = response.output_text
-
     try:
-        parsed = json.loads(result_text)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"LLM JSON 파싱 실패\n{e}\n\n원본 응답:\n{result_text}"
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # 비용 절감을 위해 mini 모델 사용
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.7
         )
+        
+        result_text = response.choices[0].message.content
+        result = json.loads(result_text)
+        
+        # 프롬프트/스키마 변경에도 후속 로직이 깨지지 않도록 정규화
+        result = _normalize_analysis_result(result)
 
-    # 후속 DB 저장 로직 보호용 정규화
-    parsed = _normalize_analysis_result(parsed)
-
-    # 원본 텍스트도 같이 보존 (디버깅/재현용)
-    parsed["result_text"] = result_text
-
-    return parsed
-
-
-
-def build_news_summary_from_csv(csv_path: str) -> str:
-    """
-    현대자동차 크롤링 CSV 파일을 읽어 news_summary 형식의 문자열로 변환합니다.
-    (제목, URL, 기재일만 사용하며, 내용은 제목으로 대체합니다.)
-    """
-    news_items: List[str] = []
-
-    with open(csv_path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for idx, row in enumerate(reader, 1):
-            title = (row.get("제목") or "").strip()
-            url = (row.get("URL") or "").strip() or "URL 없음"
-            published_date = (row.get("기재일") or "").strip() or "날짜 정보 없음"
-
-            # CSV에는 본문이 없어, 일단 제목을 내용 프리뷰로 사용
-            content_preview = title or "내용 없음"
-
-            news_items.append(
-                f"""{idx}. 제목: {title}
-   URL: {url}
-   발행일: {published_date}
-   내용: {content_preview}"""
-            )
-
-    return "\n\n".join(news_items)
-
-
-class _CsvArticle:
-    """CSV 데이터를 analyze_news_with_ai에서 사용하는 필드만 가진 간단한 기사 객체로 변환하기 위한 클래스."""
-
-    def __init__(self, title: str, url: str, published_date: str):
-        self.title = title
-        self.url = url
-        # analyze_news_with_ai가 기대하는 최소 메타데이터 구조
-        self.article_metadata = {"url": url, "published_date": published_date}
-        self.published_at = None
-        # CSV에는 본문이 없어, 제목을 내용 프리뷰로 사용
-        self.content = title
-
-
-def build_articles_from_csv(csv_path: str) -> List[_CsvArticle]:
-    """
-    현대자동차 크롤링 CSV를 읽어 analyze_news_with_ai에 넣을 수 있는
-    간단한 기사 객체 리스트로 변환합니다.
-    """
-    articles: List[_CsvArticle] = []
-
-    with open(csv_path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            title = (row.get("제목") or "").strip()
-            url = (row.get("URL") or "").strip() or "URL 없음"
-            published_date = (row.get("기재일") or "").strip() or "날짜 정보 없음"
-            if not title and not url:
-                continue
-            articles.append(_CsvArticle(title=title, url=url, published_date=published_date))
-
-    return articles
-
+        # result_text를 결과에 포함
+        result["result_text"] = result_text
+        
+        return result
+    except json.JSONDecodeError as e:
+        print(f"JSON 파싱 실패: {e}")
+        print(f"응답 텍스트: {result_text if 'result_text' in locals() else 'N/A'}")
+        raise ValueError(f"AI 분석 결과를 파싱할 수 없습니다: {e}")
+    except Exception as e:
+        import traceback
+        print(f"OpenAI API 호출 실패: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise
 
 
 def save_analysis_to_db(
@@ -1135,35 +1033,3 @@ def analyze_news_from_vector_db(
     print(f"✅ 벡터 DB 기반 분석 완료: 보고서 ID={report.id}, 뉴스 {len(news_articles)}개 분석")
     
     return report, result_text
-
-if __name__ == "__main__":
-    # 로컬에서 실행 시 현대자동차 크롤링 CSV를 읽어 요약 포맷과
-    # LLM 분석 결과(JSON)를 둘 다 터미널에서 확인할 수 있도록 합니다.
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_file = os.path.join(base_dir, "현대자동차크롤링.csv")
-
-    # 1) CSV 기반 news_summary 포맷 출력 (프롬프트에 들어가는 원본 텍스트 확인용)
-    summary_text = build_news_summary_from_csv(csv_file)
-    print("===== CSV 기반 news_summary =====")
-    print(summary_text)
-    print("\n===== LLM 분석 결과(JSON) =====")
-
-    # 2) CSV를 기사 객체 리스트로 변환 후, 기존 analyze_news_with_ai 재사용
-    csv_articles = build_articles_from_csv(csv_file)
-    try:
-        analysis_result = analyze_news_with_ai(csv_articles)
-    except Exception as e:
-        print(f"LLM 분석 중 오류가 발생했습니다: {e}")
-        raise
-
-    if not isinstance(analysis_result, dict):
-        print(f"분석 결과 형식이 dict가 아닙니다. type={type(analysis_result)} value={analysis_result!r}")
-    else:
-        # 모델이 생성한 원본 JSON 텍스트가 result_text에 들어있으면 우선 출력
-        result_text = analysis_result.get("result_text")
-        if isinstance(result_text, str) and result_text.strip():
-            print(result_text)
-        else:
-            # result_text가 없으면 파싱된 dict를 pretty JSON으로 출력
-            print(json.dumps(analysis_result, ensure_ascii=False, indent=2))
-

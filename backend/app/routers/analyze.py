@@ -72,6 +72,7 @@ class AnalyzeResponse(BaseModel):
     status: str
     message: str
     news_count: int
+    result_text: Optional[str] = Field(None, description="LLM이 생성한 원본 분석 결과 텍스트 (JSON 형식)")
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
@@ -130,7 +131,7 @@ async def analyze_news(
         print(f"📅 벡터 DB에서 뉴스 조회: {yesterday_6am.strftime('%Y-%m-%d %H:%M:%S')} ~ {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
         
         # 벡터 DB에서 뉴스 조회 및 분석
-        report = analyze_news_from_vector_db(
+        report, result_text = analyze_news_from_vector_db(
             db=db,
             start_datetime=yesterday_6am,
             end_datetime=end_datetime,
@@ -144,7 +145,8 @@ async def analyze_news(
             report_id=report.id,
             status="completed",
             message="분석이 완료되었습니다.",
-            news_count=news_count
+            news_count=news_count,
+            result_text=result_text
         )
     
     except ValueError as e:
