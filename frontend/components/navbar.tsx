@@ -5,6 +5,7 @@ import { FiMenu, FiX } from "react-icons/fi";
 import { HiArrowTrendingUp } from "react-icons/hi2";
 import { gsap } from "gsap";
 import { cn } from "@/lib/utils";
+import { SignInButton, SignUpButton, UserButton, SignedIn, SignedOut } from "@clerk/nextjs";
 
 /**
  * 반투명 Navbar 컴포넌트
@@ -18,9 +19,9 @@ export function Navbar() {
   const menuItemsRef = useRef<HTMLAnchorElement[]>([]);
 
   const navItems = [
-    { label: "최신 보고서", href: "#recent-reports" },
-    { label: "서비스 소개", href: "#service-intro" },
-    { label: "어떻게 작동하나요?", href: "#features" },
+    { label: "최신 보고서", href: "/#recent-reports" },
+    { label: "서비스 소개", href: "/#service-intro" },
+    { label: "어떻게 작동하나요?", href: "/#features" },
   ];
 
   useEffect(() => {
@@ -131,7 +132,7 @@ export function Navbar() {
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 w-full">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* 반투명 배경 with gradient border effect */}
         <div className="absolute inset-0 bg-white/80 backdrop-blur-md border-b border-white/20" />
 
@@ -172,6 +173,38 @@ export function Navbar() {
                   {item.label}
                 </a>
               ))}
+              {/* Clerk Auth Buttons */}
+              <div className="flex items-center gap-3">
+                <SignedOut>
+                  <SignInButton mode="modal">
+                    <button
+                      className={cn(
+                        "text-sm font-medium text-foreground/80",
+                        "px-4 py-2 rounded-lg",
+                        "transition-all duration-300 hover:text-primary",
+                        "hover:bg-primary/5 border border-transparent hover:border-primary/20",
+                      )}
+                    >
+                      로그인
+                    </button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <button
+                      className={cn(
+                        "text-sm font-medium text-white",
+                        "px-4 py-2 rounded-lg bg-primary",
+                        "transition-all duration-300 hover:bg-primary/90",
+                        "hover:shadow-md active:scale-95",
+                      )}
+                    >
+                      회원가입
+                    </button>
+                  </SignUpButton>
+                </SignedOut>
+                <SignedIn>
+                  <UserButton />
+                </SignedIn>
+              </div>
             </div>
 
             {/* Mobile Menu Button */}
@@ -213,6 +246,44 @@ export function Navbar() {
                   {item.label}
                 </a>
               ))}
+              {/* Clerk Auth Buttons for Mobile */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-white/20">
+                <SignedOut>
+                  <SignInButton mode="modal">
+                    <button
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={cn(
+                        "w-full text-sm font-medium text-foreground/80",
+                        "py-3 px-4 rounded-lg hover:bg-white/40",
+                        "transition-all duration-300 hover:text-primary",
+                        "border border-transparent hover:border-primary/20",
+                        "text-left",
+                      )}
+                    >
+                      로그인
+                    </button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <button
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={cn(
+                        "w-full text-sm font-medium text-white",
+                        "py-3 px-4 rounded-lg bg-primary",
+                        "transition-all duration-300 hover:bg-primary/90",
+                        "hover:shadow-md active:scale-95",
+                      )}
+                    >
+                      회원가입
+                    </button>
+                  </SignUpButton>
+                </SignedOut>
+                <SignedIn>
+                  <div className="flex items-center justify-between py-3 px-4">
+                    <span className="text-sm font-medium text-foreground/80">계정</span>
+                    <UserButton />
+                  </div>
+                </SignedIn>
+              </div>
             </div>
           </div>
         </div>

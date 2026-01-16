@@ -6,8 +6,8 @@ import { RecentReports } from "./recent-reports";
  */
 export function RecentReportsSection() {
   return (
-    <section id="recent-reports" className="px-4 scroll-mt-16 py-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto">
+    <section id="recent-reports" className="scroll-mt-16 py-20 bg-slate-50">
+      <div className="max-w-5xl mx-auto px-4">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-3xl  font-bold mb-2 text-foreground">최신 분석 보고서</h2>

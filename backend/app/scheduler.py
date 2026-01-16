@@ -34,18 +34,22 @@ async def collect_news_hourly():
         api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
         get_news_url = f"{api_url}/api/get_news"
         
-        # POST 요청 데이터 (기본 쿼리 및 크기)
-        request_data = {
-            "query": "주식 OR 증시 OR 코스피 OR 코스닥 OR 반도체 OR 경제 OR 금리 OR 부동산 OR 주가 OR 투자",
-            "size": 10  # 무료 티어 제한: 최대 10개
+        # Query 파라미터 (comma-separated 형식)
+        query = "주식,증시,코스피,코스닥,반도체,경제,금리,부동산,주가,투자"
+        size = 10  # 무료 티어 제한: 최대 10개
+        
+        # Query 파라미터로 전달
+        params = {
+            "query": query,
+            "size": size
         }
         
         print(f"📡 API 호출: POST {get_news_url}")
-        print(f"   쿼리: {request_data['query']}")
-        print(f"   크기: {request_data['size']}")
+        print(f"   쿼리: {query}")
+        print(f"   크기: {size}")
         
         async with httpx.AsyncClient(timeout=60.0) as client:  # 1분 타임아웃
-            response = await client.post(get_news_url, json=request_data)
+            response = await client.post(get_news_url, params=params)
             
             if response.status_code == 200:
                 result = response.json()

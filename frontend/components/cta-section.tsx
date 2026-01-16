@@ -1,8 +1,12 @@
+"use client";
+
 import { FiArrowRight } from "react-icons/fi";
+import { SignUpButton, SignedIn, SignedOut } from "@clerk/nextjs";
+import Link from "next/link";
 
 /**
  * CTA (Call to Action) 섹션 컴포넌트
- * 회원가입 유도 섹션
+ * 로그인 상태에 따라 다른 버튼을 표시합니다.
  */
 export function CTASection() {
   return (
@@ -17,12 +21,25 @@ export function CTASection() {
             매일 아침, AI가 분석한 주식 시장 인사이트를 이메일로 받아보세요.
           </p>
 
-          {/* 회원가입 버튼 */}
+          {/* 버튼 - 로그인 상태에 따라 다르게 표시 */}
           <div className="mb-4">
-            <button className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
-              <span>시작하기</span>
-              <FiArrowRight className="w-5 h-5" />
-            </button>
+            <SignedOut>
+              <SignUpButton mode="modal">
+                <button className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
+                  <span>시작하기</span>
+                  <FiArrowRight className="w-5 h-5" />
+                </button>
+              </SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              <Link
+                href="/#recent-reports"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+              >
+                <span>보고서 보기</span>
+                <FiArrowRight className="w-5 h-5" />
+              </Link>
+            </SignedIn>
           </div>
 
           {/* 서브 텍스트 */}

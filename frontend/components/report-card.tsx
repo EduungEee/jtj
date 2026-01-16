@@ -66,7 +66,7 @@ export function ReportCard({ report }: ReportCardProps) {
       )}
 
       {/* 제목 */}
-      <h3 className="font-bold text-lg mb-3 text-card-foreground pr-16">{report.title}</h3>
+      <h3 className="font-bold text-lg mb-3 text-card-foreground">{report.title}</h3>
 
       {/* 설명 */}
       {report.summary && (

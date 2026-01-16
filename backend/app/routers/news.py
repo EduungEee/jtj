@@ -77,7 +77,16 @@ class NewsCollectionResponse(BaseModel):
 
 @router.post("/get_news", response_model=NewsCollectionResponse)
 async def collect_news_endpoint(
-    request: NewsCollectionRequest,
+    query: str = Query(
+        default="주식,증시,코스피,코스닥,반도체,경제,금리,부동산,주가,투자",
+        description="검색 쿼리 (쉼표로 구분된 키워드, 예: '주식,증시,경제' 또는 '주식 OR 증시 OR 경제' 형식 모두 지원)"
+    ),
+    size: int = Query(
+        default=10,
+        ge=1,
+        le=100,
+        description="가져올 뉴스 개수 (참고: 현재 정책상 모든 Provider에서 최대 개수를 수집하므로 이 값은 수집 단계에서 무시될 수 있음)"
+    ),
     db: Session = Depends(get_db)
 ):
     """
@@ -96,22 +105,25 @@ async def collect_news_endpoint(
     - 각 뉴스 기사는 `provider` 필드로 출처를 구분할 수 있습니다
     
     **요청 파라미터:**
-    - **query**: 검색 쿼리 (OR 연산자로 여러 키워드 연결 가능)
-      - 기본값: "주식 OR 증시 OR 코스피 OR 코스닥 OR 반도체 OR 경제 OR 금리 OR 부동산 OR 주가 OR 투자"
-      - 예시: "주식 OR 증시", "경제 OR 금리", "반도체 OR 반도체주"
+    - **query**: 검색 쿼리 (쉼표로 구분된 키워드 또는 OR 연산자 사용 가능)
+      - 기본값: "주식,증시,코스피,코스닥,반도체,경제,금리,부동산,주가,투자"
+      - 쉼표 구분 예시: "주식,증시,경제", "반도체,반도체주"
+      - OR 연산자 예시: "주식 OR 증시 OR 경제"
+      - 두 형식 모두 지원됩니다
     - **size**: (참고) 현재 모든 Provider에서 가능한 최대 개수를 수집하도록 변경되어, 이 파라미터는 수집 단계에서 무시됩니다.
     
     **예시 요청:**
-    ```json
-    {
-      "query": "주식 OR 증시 OR 코스피 OR 코스닥 OR 반도체 OR 경제 OR 금리 OR 부동산 OR 주가 OR 투자",
-      "size": 10
-    }
+    ```
+    POST /api/get_news?query=주식,증시,경제&size=10
+    ```
+    또는
+    ```
+    POST /api/get_news?query=주식 OR 증시 OR 경제&size=10
     ```
     """
     try:
         # size 범위 검증
-        if request.size < 1 or request.size > 100:
+        if size < 1 or size > 100:
             raise HTTPException(
                 status_code=400,
                 detail="size는 1-100 사이의 값이어야 합니다."
@@ -120,8 +132,8 @@ async def collect_news_endpoint(
         # 뉴스 수집 및 저장
         saved_articles = collect_news(
             db=db,
-            query=request.query,
-            size=request.size
+            query=query,
+            size=size
         )
         
         # 응답 데이터 구성
@@ -218,5 +230,22 @@ async def get_news(
         raise HTTPException(
             status_code=500,
             detail=f"뉴스 조회 중 오류 발생: {str(e)}"
+        )
+
+
+@router.get("/news/count")
+async def get_news_count(
+    db: Session = Depends(get_db)
+):
+    """
+    저장된 뉴스 기사의 총 개수를 반환합니다.
+    """
+    try:
+        count = db.query(NewsArticle).count()
+        return {"count": count}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"뉴스 개수 조회 중 오류 발생: {str(e)}"
         )
 

@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@clerk/localizations": "^3.34.0",
+    "@clerk/nextjs": "^6.36.7",
     "clsx": "^2.1.1",
     "gsap": "^3.14.2",
     "next": "16.1.1",

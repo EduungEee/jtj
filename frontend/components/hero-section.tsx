@@ -1,10 +1,85 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
 import { FiStar, FiArrowRight, FiTrendingUp, FiBarChart2 } from "react-icons/fi";
+import { SignUpButton, SignedIn, SignedOut } from "@clerk/nextjs";
+import Link from "next/link";
 
 /**
  * Hero 섹션 컴포넌트
  * 홈페이지 상단의 주요 가입 유도 섹션
  */
-export function HeroSection() {
+interface HeroSectionProps {
+  newsCount?: number;
+  subscriberCount?: number;
+}
+
+/**
+ * 숫자 카운팅 애니메이션 훅
+ */
+function useCountUp(target: number, duration: number = 2000): number {
+  const [count, setCount] = useState(0);
+  const startTimeRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (target === 0) {
+      setCount(0);
+      return;
+    }
+
+    const startValue = 0;
+    const endValue = target;
+    const startTime = performance.now();
+    startTimeRef.current = startTime;
+
+    const animate = (currentTime: number) => {
+      if (!startTimeRef.current) return;
+
+      const elapsed = currentTime - startTimeRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Ease-out 함수 적용 (부드러운 감속)
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const currentValue = Math.floor(startValue + (endValue - startValue) * easeOut);
+
+      setCount(currentValue);
+
+      if (progress < 1) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        setCount(endValue);
+      }
+    };
+
+    animationFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [target, duration]);
+
+  return count;
+}
+
+export function HeroSection({ newsCount = 0, subscriberCount = 0 }: HeroSectionProps) {
+  // 100의 자리에서 반올림 (100 미만은 그대로 사용)
+  const roundedNewsCount = newsCount < 100 ? newsCount : Math.round(newsCount / 100) * 100;
+  const roundedSubscriberCount = subscriberCount < 100 ? subscriberCount : Math.round(subscriberCount / 100) * 100;
+
+  // 카운팅 애니메이션 적용
+  const animatedNewsCount = useCountUp(roundedNewsCount, 2000);
+  const animatedSubscriberCount = useCountUp(roundedSubscriberCount, 2000);
+
+  // 숫자 포맷팅 (천 단위 구분)
+  const formatNumber = (num: number): string => {
+    if (num === 0) return "0";
+    if (num < 1000) return `${num.toLocaleString()}+`;
+    if (num < 10000) return `${(num / 1000).toFixed(1)}K+`;
+    return `${Math.floor(num / 1000)}K+`;
+  };
   return (
     <section id="service-intro" className="container mx-auto px-4 py-16 scroll-mt-20">
       <div className="max-w-4xl mx-auto text-center">
@@ -29,10 +104,23 @@ export function HeroSection() {
 
         {/* CTA 버튼 */}
         <div className="mb-4">
-          <button className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
-            <span>회원가입하기</span>
-            <FiArrowRight className="w-5 h-5" />
-          </button>
+          <SignedOut>
+            <SignUpButton mode="modal">
+              <button className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95">
+                <span>로그인 하기</span>
+                <FiArrowRight className="w-5 h-5" />
+              </button>
+            </SignUpButton>
+          </SignedOut>
+          <SignedIn>
+            <Link
+              href="#recent-reports"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+            >
+              <span>보고서 보기</span>
+              <FiArrowRight className="w-5 h-5" />
+            </Link>
+          </SignedIn>
         </div>
 
         {/* 서브 텍스트 */}
@@ -43,7 +131,9 @@ export function HeroSection() {
           {/* 분석된 뉴스 */}
           <div className="flex flex-col items-center">
             <FiTrendingUp className="w-5 h-5 md:w-8 md:h-8 text-primary mb-2 md:mb-3" />
-            <div className="text-xl md:text-4xl font-bold text-foreground mb-0.5 md:mb-1">1,200+</div>
+            <div className="text-xl md:text-4xl font-bold text-foreground mb-0.5 md:mb-1">
+              {formatNumber(animatedNewsCount)}
+            </div>
             <div className="text-xs md:text-sm text-muted-foreground">분석된 뉴스</div>
           </div>
 
@@ -57,7 +147,9 @@ export function HeroSection() {
           {/* 구독자 수 */}
           <div className="flex flex-col items-center">
             <FiStar className="w-5 h-5 md:w-8 md:h-8 text-primary mb-2 md:mb-3" />
-            <div className="text-xl md:text-4xl font-bold text-foreground mb-0.5 md:mb-1">5,000+</div>
+            <div className="text-xl md:text-4xl font-bold text-foreground mb-0.5 md:mb-1">
+              {formatNumber(animatedSubscriberCount)}
+            </div>
             <div className="text-xs md:text-sm text-muted-foreground">구독자 수</div>
           </div>
         </div>
