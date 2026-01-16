@@ -78,7 +78,7 @@ class ValidationResult(BaseModel):
     """검증 결과"""
     is_valid: bool
     feedback: str
-    confidence: float = Field(ge=0, le=1)
+    confidence: float = Field(0.5, ge=0, le=1)
     issues: List[str] = Field(default_factory=list, description="발견된 문제점 리스트")
 
 # ==================== Graph State ====================
@@ -571,7 +571,7 @@ def check_side_effect(state: AnalysisState):
     
     if is_valid or retry_count >= max_retry:
         if retry_count >= max_retry and not is_valid:
-            print(f"⚠️ 최대 시도 횟수 도달, 강제 통과 (OpenAI가 {max_retry}회 시도)")
+            print(f"⚠️ 최대 시도 횟수 도달, 강제 통과 (Gemini가 {max_retry}회 시도)")
         return "pass"
     return "retry"
 
