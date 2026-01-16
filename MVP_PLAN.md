@@ -8,9 +8,10 @@
 
 ## 🎯 핵심 기능 (MVP)
 
-1. ✅ **자동 뉴스 수집**: 1시간마다 newsdata.io API로 최신 뉴스 수집
-   - title, description 데이터 추출
-   - pgvector와 PostgreSQL에 각각 저장
+1. ✅ **자동 뉴스 수집**: 매시간 여러 뉴스 API 소스(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 사용하여 최신 뉴스 수집
+   - **Orchestration**: 각 API 사양에 맞는 쿼리 변환(OR 지원 등) 및 모든 Provider에서 최대 개수 수집 (Max Collection)
+   - **Provider 아키텍처**: 각 Provider 클래스에 fetch 로직 통합, 공통 헬퍼 함수로 중복 제거
+   - title, description 데이터 추출 및 pgvector/PostgreSQL 통합 관리
 2. ✅ **Vector DB 저장**: 수집된 뉴스의 meta description을 pgvector를 사용하여 PostgreSQL에 벡터 저장
 3. ✅ **자동 AI 분석**: 매일 아침 6시에 보고서 생성
    - 보고서 생성 시점으로부터 24시간 전의 뉴스 기사들을 활용
@@ -56,13 +57,23 @@
 
 **목표**: 자동 뉴스 수집 및 Vector DB 저장 파이프라인
 
-- [x] 뉴스 API 연동 (`app/news.py`)
-  - [x] newsdata.io API 연동 (최신 뉴스 데이터 가져오기)
+  - [x] 뉴스 API 연동 (`app/news.py`)
+    - [x] newsdata.io API 연동
+    - [x] Naver 뉴스 API 연동
+    - [x] NewsAPI.org API 연동
+    - [x] The News API 연동
+    - [x] 뉴스 API 추상화 인터페이스 설계 (`BaseNewsProvider`)
+    - [x] 각 API별 구현체 및 Orchestration logic (Query transformation, Max Collection)
+    - [x] Provider 클래스에 fetch 로직 통합 (OOP 원칙 준수)
+    - [x] 공통 헬퍼 함수 추출 (`_make_api_request`, `_build_standard_article`)
   - [x] 뉴스 데이터에서 title, description 추출 함수
   - [x] 뉴스 저장 함수 (title, description 포함)
   - [x] 뉴스 수집 API 엔드포인트 (`routers/news.py`)
   - [x] `POST /api/get_news` 엔드포인트 구현 (뉴스 수집)
-    - [x] newsdata.io API로 최신 뉴스 데이터 수집
+    - [x] 멀티 API Provider Orchestration을 통한 뉴스 수집
+    - [x] 콤마(`,`) 구분 쿼리 및 OR 연산 지원
+    - [x] 모든 Provider에서 최대 개수 수집 (Max Collection 전략)
+    - [x] 중복 뉴스 제거 로직 (URL 기반)
     - [x] 뉴스 데이터에서 title, description 추출
     - [x] 관계형 DB (PostgreSQL)에 저장
     - [x] 벡터 DB (pgvector)에 저장 (metadata 포함)
@@ -220,7 +231,7 @@ jtj/
 │   ├── app/
 │   │   ├── main.py          # FastAPI 앱 (스키마 초기화 포함)
 │   │   ├── database.py      # DB 연결 및 초기화 (pgvector 확장 설치)
-│   │   ├── news.py          # 뉴스 수집
+│   │   ├── news.py          # 뉴스 수집 (여러 API 소스 지원)
 │   │   ├── analysis.py      # AI 분석
 │   │   ├── scheduler.py     # 스케줄러 (뉴스 수집, 일일 분석)
 │   │   ├── stock_api/       # 주식 관련 API 연동
@@ -355,7 +366,9 @@ CREATE TABLE email_subscriptions (
 ### 뉴스 관련
 
 - `POST /api/get_news` - 뉴스 수집 엔드포인트
-  - newsdata.io API로 최신 뉴스 데이터 수집
+  - 멀티 API Provider(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 통한 뉴스 수집
+  - Orchestration: 쿼리 변환(OR 지원), 모든 Provider에서 최대 개수 수집 (Max Collection)
+  - 여러 API 소스에서 수집한 뉴스 통합 처리 및 중복 제거
   - 뉴스 데이터에서 title, description 추출
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB에는 날짜, 원문 링크 등 metadata 포함)
   - 1시간마다 크론잡으로 트리거됨
@@ -395,7 +408,9 @@ CREATE TABLE email_subscriptions (
 ### 자동 스케줄러
 
 - **뉴스 수집**: 매시간 자동 실행 (`POST /api/get_news` 호출)
-  - newsdata.io API로 최신 뉴스 데이터 수집
+  - 멀티 API Provider(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 통한 뉴스 수집
+  - Orchestration: 쿼리 변환(OR 지원), 모든 Provider에서 최대 개수 수집 (Max Collection)
+  - 여러 API 소스에서 수집한 뉴스 통합 처리 및 중복 제거
   - 뉴스 데이터에서 title, description 추출
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB metadata: 날짜, 원문 링크 리스트)
 - **보고서 생성**: 매일 아침 6시 자동 실행 (`POST /api/analyze` 호출)
@@ -427,8 +442,12 @@ CREATE TABLE email_subscriptions (
 # OpenAI API
 OPENAI_API_KEY=your_openai_api_key
 
-# NewsData.io API
+# 뉴스 API (여러 소스 지원)
 NEWSDATA_API_KEY=your_newsdata_api_key
+NEWSORG_API_KEY=your_newsorg_api_key
+THENEWSAPI_API_KEY=your_thenewsapi_api_key
+NAVER_CLIENT_ID=your_naver_client_id
+NAVER_CLIENT_SECRET=your_naver_client_secret
 
 # Database
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stock_analysis
@@ -526,8 +545,11 @@ KOREA_INVESTMENT_API_SECRET=your_korea_inv_secret
 
 ## 🎯 MVP 완성 기준
 
-- [ ] 1시간마다 자동 뉴스 수집 동작 (`POST /api/get_news` 호출)
-- [ ] newsdata.io API로 최신 뉴스 데이터 수집 및 title, description 추출
+- [x] 1시간마다 자동 뉴스 수집 동작 (`POST /api/get_news` 호출)
+- [x] 멀티 API Provider(NewsData, Naver, NewsAPI.org, TheNewsAPI)를 통한 뉴스 수집
+- [x] Orchestration Logic: 쿼리 변환(OR 지원), 모든 Provider에서 최대 개수 수집 (Max Collection)
+- [x] Provider 클래스 리팩토링: fetch 로직 통합, 공통 헬퍼 함수 추출
+- [x] 여러 API 소스에서 수집한 뉴스 통합 처리 및 중복 제거 동작
 - [ ] 뉴스 title, description을 관계형 DB와 벡터 DB에 저장
 - [ ] 벡터 DB에 날짜 및 원문 링크 리스트를 포함한 metadata 저장 (LLM 참조용)
 - [ ] 매일 아침 6시에 벡터 DB에서 전날 아침 6시~현재 시간 뉴스 기사 조회 후 LLM 보고서 작성

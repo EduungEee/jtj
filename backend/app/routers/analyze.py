@@ -130,7 +130,7 @@ async def analyze_news(
         print(f"📅 벡터 DB에서 뉴스 조회: {yesterday_6am.strftime('%Y-%m-%d %H:%M:%S')} ~ {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
         
         # 벡터 DB에서 뉴스 조회 및 분석
-        report = analyze_news_from_vector_db(
+        report, result_text = analyze_news_from_vector_db(
             db=db,
             start_datetime=yesterday_6am,
             end_datetime=end_datetime,

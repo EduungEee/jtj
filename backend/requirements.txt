@@ -6,11 +6,13 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 openai>=1.12.0
+google-generativeai>=0.3.0
 requests==2.31.0
 python-dateutil==2.8.2
 httpx>=0.27.0
 apscheduler>=3.10.0
 pytz>=2023.3
+<<<<<<< HEAD
 langgraph>=0.2.0
 langchain-openai>=0.1.0
 google-generativeai>=0.7.0
@@ -18,3 +20,6 @@ tavily-python>=0.3.0
 pandas>=2.0.0
 numpy>=1.24.0
 tldextract
+=======
+tldextract
+>>>>>>> jay/predict_llm

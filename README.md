@@ -8,9 +8,10 @@
 
 ## ✨ 주요 기능
 
-- 📰 **자동 뉴스 수집**: 1시간마다 newsdata.io API로 최신 뉴스 자동 수집
-  - title, description 데이터 추출
-  - pgvector와 PostgreSQL에 각각 저장
+- 📰 **자동 뉴스 수집**: 매시간 여러 뉴스 API를 통해 최신 뉴스 자동 수집 (NewsData, Naver, NewsAPI.org, TheNewsAPI)
+  - **Orchestration**: 각 API의 사양에 따른 쿼리 변환 (OR 연산자 지원 등) 및 모든 Provider에서 최대 개수 수집 (Max Collection)
+  - **Provider 아키텍처**: 각 Provider 클래스에 fetch 로직 통합, 공통 헬퍼 함수로 중복 제거
+  - title, description 데이터 추출 및 pgvector/PostgreSQL 저장
 - 🤖 **자동 보고서 생성**: 매일 아침 6시에 보고서 생성
   - 보고서 생성 시점으로부터 24시간 전의 뉴스 기사들을 활용
   - LLM을 사용하여 주식 동향 예측 분석
@@ -26,7 +27,7 @@
 - **Backend**: FastAPI, PostgreSQL + pgvector (Vector DB), OpenAI API
 - **Scheduler**: APScheduler (백그라운드 작업, 가볍고 FastAPI 통합 용이)
 - **Frontend**: Next.js 15 (App Router)
-- **기타**: Docker Compose, newsdata.io API, SendGrid/Resend (이메일 API), DART API, 한국투자증권 API
+- **기타**: Docker Compose, news API(NewsData, Naver, NewsAPI.org, TheNewsAPI),DART API, 한국투자증권 API, SendGrid/Resend (이메일 API)
 
 ## 🚀 빠른 시작
 
@@ -36,10 +37,10 @@ cp .env.example .env
 # .env 파일에 API 키 설정
 
 # 2. Backend와 Database 실행 (Docker)
-docker-compose up -d
+docker compose up -d
 
 # 3. Backend 잘 실행됐는지 확인
-docker-compose logs -f backend
+docker compose logs -f backend
 
 # 3. Frontend 실행 (로컬)
 cd frontend
@@ -52,7 +53,7 @@ npm run dev
 # 데이터베이스 관리: http://localhost:8081 (PgWeb)
 
 # docker-compose 재빌드
-docker-compose build --no-cache
+docker compose build --no-cache
 ```
 
 ## 📝 API 엔드포인트
@@ -60,8 +61,9 @@ docker-compose build --no-cache
 ### 뉴스 관련
 
 - `POST /api/get_news` - 뉴스 수집 엔드포인트
-  - newsdata.io API로 최신 뉴스 데이터 수집
-  - 뉴스 데이터에서 title, description 추출
+  - 멀티 Provider 아키텍처를 통한 뉴스 데이터 수집
+  - 콤마(`,`)로 구분된 쿼리 처리 (OR 연산 지원 API 자동 변환)
+  - 모든 Provider에서 최대 개수 수집 (Max Collection 전략)
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB에는 날짜, 원문 링크 등 metadata 포함)
   - 1시간 마다 크론잡으로 트리거됨
 - `GET /api/news` - 저장된 뉴스 조회 엔드포인트
@@ -90,8 +92,8 @@ docker-compose build --no-cache
 ### 자동 스케줄러
 
 - **뉴스 수집**: 매시간 자동 실행 (`POST /api/get_news` 호출)
-  - newsdata.io API로 최신 뉴스 데이터 수집
-  - 뉴스 데이터에서 title, description 추출
+  - 멀티 API Provider Orchestration을 통한 뉴스 수집
+  - 쿼리 변환 및 모든 Provider에서 최대 개수 수집 (Max Collection)
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB metadata: 날짜, 원문 링크 리스트)
 - **보고서 생성**: 매일 아침 6시 자동 실행 (`POST /api/analyze` 호출)
   - 벡터 DB에서 전날 아침 6시~현재 시간 사이의 뉴스 기사 조회
@@ -104,8 +106,13 @@ docker-compose build --no-cache
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
-# NewsData.io API
+# News API Keys
 NEWSDATA_API_KEY=your_newsdata_api_key
+NAVER_CLIENT_ID=your_naver_client_id
+NAVER_CLIENT_SECRET=your_naver_client_secret
+NEWSORG_API_KEY=your_newsorg_api_key
+THENEWSAPI_API_KEY=your_thenewsapi_api_key
+
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stock_analysis
 # 이메일 API (SendGrid 또는 Resend 중 선택)
 SENDGRID_API_KEY=your_sendgrid_api_key
@@ -124,3 +131,5 @@ KOREA_INVESTMENT_API_SECRET=your_korea_inv_secret
 ## 기여자
 
 - 박우림
+- 송민규
+- 류재상
