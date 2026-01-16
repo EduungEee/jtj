@@ -87,8 +87,13 @@ async def analyze_news(
         # 요청 로깅
         print(f"분석 요청 받음: date={request.date}, force={request.force}")
         
+        # 한국 시간대 설정 (날짜 계산에 사용)
+        seoul_tz = pytz.timezone('Asia/Seoul')
+        now_kst = datetime.now(seoul_tz)
+        
         # 날짜 파싱
-        analysis_date = date.today()
+        # 기본값은 한국 시간 기준 오늘 날짜
+        analysis_date = now_kst.date()
         if request.date and request.date.strip():  # None이 아니고 빈 문자열도 아님
             date_str = request.date.strip()
             try:
@@ -101,7 +106,7 @@ async def analyze_news(
                     detail=f"날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식을 사용해주세요. (받은 값: '{date_str}')"
                 )
         else:
-            print(f"날짜 미지정, 오늘 날짜 사용: {analysis_date}")
+            print(f"날짜 미지정, 한국 시간 기준 오늘 날짜 사용: {analysis_date}")
         
         # 이미 분석된 날짜인지 확인
         if not request.force:
@@ -117,9 +122,9 @@ async def analyze_news(
                     news_count=0
                 )
         
-        # 한국 시간대 설정
-        seoul_tz = pytz.timezone('Asia/Seoul')
-        now = datetime.now(seoul_tz)
+        # 한국 시간대 설정 (뉴스 조회 시간 범위 계산에 사용)
+        # seoul_tz와 now는 위에서 이미 설정됨
+        now = now_kst
         
         # 전날 06:00:00 계산
         yesterday_6am = (now - timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
