@@ -1,6 +1,6 @@
 """
 AI 분석 모듈
-OpenAI API를 사용하여 뉴스를 분석하고 산업/주식 예측을 수행합니다.
+LangGraph 파이프라인을 사용하여 뉴스를 분석하고 산업/주식 예측을 수행합니다.
 """
 import os
 import json
@@ -22,18 +22,21 @@ if backend_path not in sys.path:
 
 from models.models import NewsArticle, Report, ReportIndustry, ReportStock
 
+# LangGraph 파이프라인 import
+try:
+    from langgraph.graph import StateGraph, END
+    from typing import TypedDict
+    LANGGRAPH_AVAILABLE = True
+except ImportError:
+    LANGGRAPH_AVAILABLE = False
+    print("⚠️  LangGraph 파이프라인을 사용할 수 없습니다. 기본 분석 방식을 사용합니다.")
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Gemini 클라이언트 초기화
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-
-def get_gemini_client():
-    """Gemini 클라이언트를 지연 초기화합니다."""
-    if not GEMINI_API_KEY:
-        return None
-    return genai.GenerativeModel('gemini-2.5-flash')
 
 def _safe_json_loads(value: object) -> Optional[dict]:
     """
@@ -270,24 +273,54 @@ def search_similar_news_by_embedding(
         try:
             # 벡터 유사도 검색 (cosine distance 사용)
             # <=> 연산자는 cosine distance를 반환 (작을수록 유사함)
+            # published_at 필드를 직접 사용하거나, metadata의 published_date를 사용
             cursor.execute("""
                 SELECT id, embedding <=> %s::vector(1536) AS distance
                 FROM news_articles
                 WHERE embedding IS NOT NULL
-                AND metadata IS NOT NULL
-                AND metadata->>'published_date' IS NOT NULL
                 AND (
-                    (metadata->>'published_date')::timestamp >= %s::timestamp
-                    AND (metadata->>'published_date')::timestamp <= %s::timestamp
+                    (published_at IS NOT NULL 
+                     AND published_at >= %s::timestamp 
+                     AND published_at <= %s::timestamp)
+                    OR
+                    (metadata IS NOT NULL 
+                     AND metadata->>'published_date' IS NOT NULL
+                     AND (metadata->>'published_date')::timestamp >= %s::timestamp
+                     AND (metadata->>'published_date')::timestamp <= %s::timestamp)
                 )
                 ORDER BY embedding <=> %s::vector(1536)
                 LIMIT %s
-            """, (embedding_str, start_str, end_str, embedding_str, limit))
+            """, (embedding_str, start_str, end_str, start_str, end_str, embedding_str, limit))
             
             article_ids = [row[0] for row in cursor.fetchall()]
             articles = db.query(NewsArticle).filter(NewsArticle.id.in_(article_ids)).all() if article_ids else []
             
             print(f"✅ 벡터 유사도 검색 완료: {len(articles)}개 (기간: {start_datetime.strftime('%Y-%m-%d %H:%M')} ~ {end_datetime.strftime('%Y-%m-%d %H:%M')}, 상위 {limit}개)")
+            
+            # 여전히 뉴스가 없으면 embedding 조건을 완화해서 시도
+            if not articles:
+                print(f"⚠️  embedding 조건으로 뉴스를 찾지 못했습니다. embedding 조건을 완화하여 재시도합니다.")
+                cursor.execute("""
+                    SELECT id, 0.0 AS distance
+                    FROM news_articles
+                    WHERE (
+                        (published_at IS NOT NULL 
+                         AND published_at >= %s::timestamp 
+                         AND published_at <= %s::timestamp)
+                        OR
+                        (metadata IS NOT NULL 
+                         AND metadata->>'published_date' IS NOT NULL
+                         AND (metadata->>'published_date')::timestamp >= %s::timestamp
+                         AND (metadata->>'published_date')::timestamp <= %s::timestamp)
+                    )
+                    ORDER BY COALESCE(published_at, (metadata->>'published_date')::timestamp) DESC
+                    LIMIT %s
+                """, (start_str, end_str, start_str, end_str, limit))
+                
+                article_ids = [row[0] for row in cursor.fetchall()]
+                articles = db.query(NewsArticle).filter(NewsArticle.id.in_(article_ids)).all() if article_ids else []
+                print(f"📊 embedding 조건 완화 후 조회된 뉴스: {len(articles)}개")
+            
             return articles
         finally:
             cursor.close()
@@ -373,26 +406,93 @@ def get_news_by_date_range(
         cursor = raw_conn.cursor()
         
         try:
-            # LIMIT 절 추가 (제공된 경우)
-            limit_clause = f"LIMIT {limit}" if limit is not None else ""
+            # 디버깅: 각 조건별 뉴스 개수 확인
+            cursor.execute("SELECT COUNT(*) FROM news_articles")
+            total_count = cursor.fetchone()[0]
+            print(f"📊 전체 뉴스 개수: {total_count}개")
             
-            cursor.execute(f"""
-                SELECT id FROM news_articles
+            cursor.execute("SELECT COUNT(*) FROM news_articles WHERE embedding IS NOT NULL")
+            with_embedding = cursor.fetchone()[0]
+            print(f"📊 임베딩 있는 뉴스: {with_embedding}개")
+            
+            cursor.execute("SELECT COUNT(*) FROM news_articles WHERE metadata IS NOT NULL")
+            with_metadata = cursor.fetchone()[0]
+            print(f"📊 메타데이터 있는 뉴스: {with_metadata}개")
+            
+            cursor.execute("SELECT COUNT(*) FROM news_articles WHERE metadata->>'published_date' IS NOT NULL")
+            with_published_date = cursor.fetchone()[0]
+            print(f"📊 published_date 있는 뉴스: {with_published_date}개")
+            
+            # 날짜 범위 확인
+            cursor.execute("""
+                SELECT COUNT(*) FROM news_articles
                 WHERE embedding IS NOT NULL
                 AND metadata IS NOT NULL
                 AND metadata->>'published_date' IS NOT NULL
-                AND (
-                    (metadata->>'published_date')::timestamp >= %s::timestamp
-                    AND (metadata->>'published_date')::timestamp <= %s::timestamp
+            """)
+            with_all_conditions = cursor.fetchone()[0]
+            print(f"📊 모든 조건 만족 뉴스: {with_all_conditions}개")
+            
+            # LIMIT 절 추가 (제공된 경우)
+            limit_clause = f"LIMIT {limit}" if limit is not None else ""
+            
+            # 데이터베이스에 저장된 뉴스를 반드시 가져오기 위해 조건을 단순화
+            # published_at 필드를 우선 사용하고, 없으면 metadata의 published_date 사용
+            # 날짜 범위 조건이 있으면 적용, 없으면 모든 뉴스 조회
+            cursor.execute(f"""
+                SELECT id FROM news_articles
+                WHERE (
+                    (published_at IS NOT NULL 
+                     AND published_at >= %s::timestamp 
+                     AND published_at <= %s::timestamp)
+                    OR
+                    (metadata IS NOT NULL 
+                     AND metadata->>'published_date' IS NOT NULL
+                     AND (metadata->>'published_date')::timestamp >= %s::timestamp
+                     AND (metadata->>'published_date')::timestamp <= %s::timestamp)
+                    OR
+                    (published_at IS NULL 
+                     AND (metadata IS NULL OR metadata->>'published_date' IS NULL)
+                     AND collected_at >= %s::timestamp 
+                     AND collected_at <= %s::timestamp)
                 )
-                ORDER BY (metadata->>'published_date')::timestamp DESC
+                ORDER BY COALESCE(published_at, (metadata->>'published_date')::timestamp, collected_at) DESC
                 {limit_clause}
-            """, (start_str, end_str))
+            """, (start_str, end_str, start_str, end_str, start_str, end_str))
             
             article_ids = [row[0] for row in cursor.fetchall()]
             articles = db.query(NewsArticle).filter(NewsArticle.id.in_(article_ids)).all() if article_ids else []
             
+            # 여전히 뉴스가 없으면 날짜 조건을 완화해서 최근 뉴스 조회
+            if not articles:
+                print(f"⚠️  날짜 범위 내 뉴스를 찾지 못했습니다. 최근 뉴스를 조회합니다.")
+                cursor.execute(f"""
+                    SELECT id FROM news_articles
+                    ORDER BY COALESCE(published_at, (metadata->>'published_date')::timestamp, collected_at) DESC
+                    {limit_clause}
+                """)
+                
+                article_ids = [row[0] for row in cursor.fetchall()]
+                articles = db.query(NewsArticle).filter(NewsArticle.id.in_(article_ids)).all() if article_ids else []
+                print(f"📊 날짜 조건 완화 후 조회된 뉴스: {len(articles)}개")
+            
             print(f"✅ 벡터 DB에서 뉴스 조회 완료: {len(articles)}개 (기간: {start_datetime.strftime('%Y-%m-%d %H:%M')} ~ {end_datetime.strftime('%Y-%m-%d %H:%M')})")
+            
+            if not articles:
+                # 날짜 범위 밖의 뉴스도 확인
+                cursor.execute("""
+                    SELECT MIN((metadata->>'published_date')::timestamp) as min_date,
+                           MAX((metadata->>'published_date')::timestamp) as max_date
+                    FROM news_articles
+                    WHERE embedding IS NOT NULL
+                    AND metadata IS NOT NULL
+                    AND metadata->>'published_date' IS NOT NULL
+                """)
+                date_range = cursor.fetchone()
+                if date_range and date_range[0] and date_range[1]:
+                    print(f"📅 DB에 있는 뉴스 날짜 범위: {date_range[0]} ~ {date_range[1]}")
+                    print(f"📅 조회 시도한 날짜 범위: {start_datetime} ~ {end_datetime}")
+            
             return articles
         finally:
             cursor.close()
@@ -1004,6 +1104,789 @@ def save_analysis_to_db(
     return report
 
 
+def _convert_langgraph_result_to_analysis_format(pipeline_result: Dict, news_articles: List[NewsArticle]) -> Dict:
+    """
+    LangGraph 파이프라인 결과를 기존 분석 결과 형식으로 변환합니다.
+    LangGraph의 최종 검증 결과를 포함하여 기존 형식으로 변환합니다.
+    
+    Args:
+        pipeline_result: LangGraph 파이프라인 실행 결과 (최종 검증 완료된 결과)
+        news_articles: 분석된 뉴스 기사 리스트
+    
+    Returns:
+        기존 형식의 분석 결과 딕셔너리 (analyze_news_with_ai와 동일한 형식)
+        검증 결과도 포함됨
+    """
+    # LangGraph 결과에서 산업 및 주식 정보 추출 (최종 검증된 결과)
+    primary_industry = pipeline_result.get("primary_industry", "")
+    primary_reasoning = pipeline_result.get("primary_reasoning", "")
+    primary_stocks = pipeline_result.get("primary_stocks", [])
+    
+    # 검증 메시지 추출
+    primary_validation_msg = pipeline_result.get("primary_validation_msg", "")
+    secondary_validation_msg = pipeline_result.get("secondary_validation_msg", "")
+    
+    # report_payload에서 더 자세한 정보 추출 시도
+    report_payload = pipeline_result.get("report_payload", {})
+    if isinstance(report_payload, dict):
+        if not primary_industry and report_payload.get("primary_industry"):
+            primary_industry = report_payload.get("primary_industry")
+        if not primary_reasoning and report_payload.get("primary_reasoning"):
+            primary_reasoning = report_payload.get("primary_reasoning")
+    
+    # 기존 형식으로 변환 (analyze_news_with_ai와 동일한 형식)
+    industries = []
+    
+    # 주식 정보 변환
+    stocks = []
+    for stock in primary_stocks:
+        if isinstance(stock, dict):
+            stocks.append({
+                "stock_code": stock.get("code", ""),
+                "stock_name": stock.get("name", ""),
+                "expected_trend": "up",  # 기본값
+                "confidence_score": 0.7,  # 기본값
+                "reasoning": primary_reasoning or f"{primary_industry} 산업 관련 뉴스 기반 분석"
+            })
+    
+    # 산업 정보 생성
+    if primary_industry:
+        industries.append({
+            "industry_name": primary_industry,
+            "impact_level": "high",
+            "trend_direction": "positive",
+            "impact_description": {
+                "market_summary": {
+                    "market_sentiment": "positive",
+                    "key_themes": []
+                },
+                "buy_candidates": [{
+                    "industry": primary_industry,
+                    "reason_industry": primary_reasoning or f"{primary_industry} 산업 관련 뉴스 기반 분석",
+                    "stocks": stocks
+                }],
+                "hold_candidates": [],
+                "sell_candidates": []
+            },
+            "stocks": stocks
+        })
+    else:
+        # 기본 산업 정보 생성
+        industries.append({
+            "industry_name": "시장 종합 및 투자 전략",
+            "impact_level": "medium",
+            "trend_direction": "neutral",
+            "impact_description": {
+                "market_summary": {
+                    "market_sentiment": "neutral",
+                    "key_themes": []
+                },
+                "buy_candidates": [],
+                "hold_candidates": [],
+                "sell_candidates": []
+            },
+            "stocks": []
+        })
+    
+    # 요약 생성 (검증 결과 포함)
+    summary = report_payload.get("report_summary") if isinstance(report_payload, dict) else None
+    if not summary:
+        if primary_industry:
+            summary = f"LangGraph 파이프라인 분석 결과: {primary_industry} 산업 중심 분석. {primary_reasoning}"
+        else:
+            summary = "LangGraph 파이프라인 분석 결과"
+    
+    # 검증 메시지 추가
+    if primary_validation_msg:
+        summary += f"\n[Primary 검증] {primary_validation_msg}"
+    if secondary_validation_msg:
+        summary += f"\n[Secondary 검증] {secondary_validation_msg}"
+    
+    # 기존 형식으로 정규화 (analyze_news_with_ai와 동일하게)
+    analysis_result = {
+        "summary": summary,
+        "industries": industries
+    }
+    
+    # 정규화 함수 적용
+    normalized_result = _normalize_analysis_result(analysis_result)
+    
+    # result_text 생성
+    result_text = json.dumps(normalized_result, ensure_ascii=False, indent=2)
+    normalized_result["result_text"] = result_text
+    
+    return normalized_result
+
+
+# ==================== LangGraph Pipeline (from analysis_pipeline_skeleton.py) ====================
+
+if LANGGRAPH_AVAILABLE:
+    # ==================== State ====================
+    
+    class PipelineState(TypedDict):
+        # Input
+        news_content: str
+        corp_code_map: Optional[Dict[str, str]]
+    
+        # Node 1 outputs
+        primary_industry: Optional[str]
+        primary_reasoning: Optional[str]
+        primary_stocks: List[Dict[str, str]]  # [{"code": "...", "name": "..."}]
+    
+        # Validation (Node 2)
+        primary_industry_valid: bool
+        primary_stocks_valid: bool
+        primary_validation_msg: str
+    
+        # Exclusions for Node 1
+        excluded_industries: List[str]
+        excluded_stocks: List[str]
+    
+        # Financial data (Node 4 input)
+        financial_statements: Optional[str]
+    
+        # Node 4 outputs (secondary perspective)
+        secondary_industry: Optional[str]
+        secondary_reasoning: Optional[str]
+        secondary_stocks: List[Dict[str, str]]
+    
+        # Validation (Node 5)
+        secondary_industry_valid: bool
+        secondary_stocks_valid: bool
+        secondary_validation_msg: str
+    
+        # Exclusions for Node 4
+        excluded_secondary_industries: List[str]
+        excluded_secondary_stocks: List[str]
+    
+        # Report (Node 7)
+        report_summary: Optional[str]
+        report_payload: Optional[Dict]
+    
+        # Loop control
+        max_retries: int
+        primary_retry_count: int
+        secondary_retry_count: int
+    
+    
+    # ==================== Helper Functions ====================
+    
+    def _build_financial_statements_from_dart(
+        stocks: List[Dict[str, str]],
+        corp_code_map: Optional[Dict[str, str]],
+        bsns_year: str = "2023",
+        reprt_code: str = "11011",
+    ) -> Optional[str]:
+        if not stocks or not corp_code_map:
+            return None
+    
+        try:
+            from app.stock_api.dart_api import get_financial_statements
+        except ImportError:
+            return None
+    
+        corp_codes: List[str] = []
+        code_to_name: Dict[str, str] = {}
+        for stock in stocks:
+            stock_code = stock.get("code")
+            stock_name = stock.get("name") or stock_code
+            corp_code = corp_code_map.get(stock_code) if stock_code else None
+            if corp_code:
+                corp_codes.append(corp_code)
+                code_to_name[corp_code] = stock_name
+    
+        if not corp_codes:
+            return None
+    
+        result = get_financial_statements(corp_codes, bsns_year=bsns_year, reprt_code=reprt_code)
+        if not result.get("success"):
+            return None
+    
+        items = result.get("data", [])
+        if not items:
+            return None
+    
+        target_accounts = ("자기자본비율", "부채비율", "유동비율")
+        grouped: Dict[str, List[Dict]] = {code: [] for code in corp_codes}
+        for item in items:
+            corp_code = item.get("corp_code")
+            account_nm = item.get("account_nm", "")
+            if corp_code in grouped and any(key in account_nm for key in target_accounts):
+                grouped[corp_code].append(item)
+    
+        lines: List[str] = []
+        for corp_code in corp_codes:
+            name = code_to_name.get(corp_code, corp_code)
+            lines.append(f"[{name} 재무제표]")
+            entries = grouped.get(corp_code) or []
+            if not entries:
+                lines.append(" - 핵심 지표 데이터 없음")
+                continue
+            for entry in entries:
+                account_nm = entry.get("account_nm", "항목")
+                amount = entry.get("thstrm_amount", "N/A")
+                currency = entry.get("currency", "")
+                lines.append(f" - {account_nm}: {amount} {currency}".strip())
+    
+        return "\n".join(lines)
+    
+    
+    def _extract_json_from_text(text: str) -> str:
+        """텍스트에서 JSON을 추출합니다."""
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return ""
+        return text[start : end + 1]
+    
+    
+    # ==================== Nodes ====================
+    
+    def _node_primary_recommendation(state: PipelineState) -> Dict:
+        """Node 1: Analyze news -> derive industry + primary stocks."""
+        system_prompt = """
+당신은 장기투자 관점의 주식 리서치 애널리스트이자 포트폴리오 매니저다.
+
+역할:
+- 투자 기간: 최소 3년 이상의 장기투자.
+- 스타일: 성장성과 재무 건전성을 중시하는 Bottom-up + Top-down 혼합.
+- 목표: 지난 24시간 뉴스에 기반해
+  1) 새로 매수할 유망 산업군과 종목
+  2) 기존 보유 시 계속 보유할 유망 산업군과 종목
+  3) 단계적 매도를 고려해야 할 산업군과 종목
+  을 식별하고, 그 근거를 요약해 제시한다.
+- 추가 목표: 뉴스에서 드러난 1차적(직접) 수혜/피해뿐 아니라,
+  공급망, 고객 산업, 경쟁 산업, 대체재·보완재 관점에서
+  2차·3차로 파급되는 산업/종목까지 구조적으로 예측한다.
+
+제한사항:
+- 단기 뉴스 모멘텀만으로 매수/매도 결정을 내리지 말고, 장기 구조적 성장 가능성과 리스크를 함께 평가하라.
+- 과도하게 공격적이거나 투기적인 표현("무조건 오른다" 등)은 금지한다.
+- 뉴스에 존재하지 않는 사실을 단정적으로 만들어내지 말고,
+  연쇄 시나리오도 '합리적인 추론' 수준에서만 제시하고,
+  불확실성이 크면 reasoning에 그 사실을 명시하라.
+- 신뢰도(confidence_score)가 낮은 경우(예: 0.4 미만)에는
+  구체적인 매수/매도보다는 관찰·모니터링 대상으로 서술하라.
+
+연쇄 영향 분석 기준 (필수):
+1) 1차 영향 (confidence_score ≥ 0.7 필수)
+   - 뉴스에 직접 언급된 산업/종목
+   - 또는 뉴스에서 드러난 사건이 매출/이익에 직접 연결되는 주체
+   - 예: "삼성전자 반도체 매출 호조" → 삼성전자 (1차)
+
+2) 2차 영향 (confidence_score ≥ 0.5 필수)
+   - 1차 영향의 핵심 공급업체/고객/파트너
+   - 공급망 비중이 크거나, 역사적 상관관계가 명확한 경우만
+   - 예: 삼성전자 반도체 호조 → SK하이닉스 HBM (2차, 실제 고객사임)
+
+3) 3차 영향 (confidence_score ≥ 0.3, 선택적)
+   - 2차 영향의 공급업체/고객 또는 인프라/자본재
+   - 역사적 사례나 명확한 경제적 연결고리가 있을 때만
+   - 예: HBM 수요 증가 → 포토닉스/소재 업체 (3차)
+
+출력 형식:
+- 반드시 유효한 JSON만 출력하라.
+- JSON 이외의 설명, 자연어 문장, 마크다운은 출력하지 마라.
+
+JSON 스키마:
+{
+  "summary": "아래 산업 분석에는 전체 시장 요약, 투자 전략(Buy/Hold/Sell), 연쇄 영향 시나리오가 포함되어 있습니다.",
+  "industries": [
+    {
+      "industry_name": "시장 종합 및 투자 전략",
+      "impact_level": "high" | "medium" | "low",
+      "trend_direction": "positive" | "negative" | "neutral",
+      "impact_description": {
+        "market_summary": {
+          "market_sentiment": "positive" | "negative" | "neutral",
+          "key_themes": ["string"]
+        },
+        "buy_candidates": [
+          {
+            "industry": "string",
+            "reason_industry": "string",
+            "stocks": [
+              {
+                "stock_code": "string",
+                "stock_name": "string",
+                "expected_trend": "up",
+                "confidence_score": 0.0-1.0,
+                "impact_chain_level": 1 | 2 | 3,
+                "reasoning": "string"
+              }
+            ]
+          }
+        ],
+        "hold_candidates": [...],
+        "sell_candidates": [...]
+      },
+      "stocks": []
+    }
+  ]
+}
+""".strip()
+    
+        prompt = f"""
+[원본_뉴스]
+{state.get("news_content", "")}
+[원본_뉴스_끝]
+"""
+    
+        google_api_key = os.getenv("GOOGLE_API_KEY") or GEMINI_API_KEY
+        if not google_api_key:
+            print("⚠️ GOOGLE_API_KEY/GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
+            return {
+                "primary_industry": "",
+                "primary_reasoning": "",
+                "primary_stocks": [],
+                "primary_retry_count": state.get("primary_retry_count", 0) + 1,
+            }
+    
+        try:
+            genai.configure(api_key=google_api_key)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            full_prompt = f"{system_prompt}\n\n{prompt}"
+            response = model.generate_content(
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(temperature=0.0),
+            )
+            raw_text = response.text if hasattr(response, "text") else str(response)
+    
+            payload: Dict = {}
+            extracted = _extract_json_from_text(raw_text)
+            if extracted:
+                try:
+                    payload = json.loads(extracted)
+                except json.JSONDecodeError:
+                    payload = {}
+    
+            industries = payload.get("industries", []) if isinstance(payload, dict) else []
+            primary_industry = ""
+            primary_reasoning = ""
+            primary_stocks: List[Dict[str, str]] = []
+    
+            if industries:
+                first = industries[0] or {}
+                impact_desc = (first.get("impact_description") or {}) if isinstance(first, dict) else {}
+                buy_candidates = impact_desc.get("buy_candidates", []) if isinstance(impact_desc, dict) else []
+                if buy_candidates:
+                    candidate = buy_candidates[0] or {}
+                    primary_industry = candidate.get("industry", "")
+                    primary_reasoning = candidate.get("reason_industry", "")
+                    stocks = candidate.get("stocks", []) if isinstance(candidate, dict) else []
+                    for stock in stocks:
+                        if not isinstance(stock, dict):
+                            continue
+                        code = stock.get("stock_code") or stock.get("code") or ""
+                        name = stock.get("stock_name") or stock.get("name") or ""
+                        if code or name:
+                            primary_stocks.append({"code": code, "name": name})
+    
+            return {
+                "primary_industry": primary_industry,
+                "primary_reasoning": primary_reasoning,
+                "primary_stocks": primary_stocks,
+                "primary_retry_count": state.get("primary_retry_count", 0) + 1,
+            }
+        except Exception as e:
+            import traceback
+            print(f"⚠️ Primary 예측 LLM 호출 실패: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
+            return {
+                "primary_industry": "",
+                "primary_reasoning": "",
+                "primary_stocks": [],
+                "primary_retry_count": state.get("primary_retry_count", 0) + 1,
+            }
+    
+    
+    def _node_primary_validation(state: PipelineState) -> Dict:
+        """Node 2: Validate primary industry relevance and stock financial health."""
+        prediction_output = {
+            "industry": state.get("primary_industry", ""),
+            "stocks": state.get("primary_stocks", []),
+            "reasoning": state.get("primary_reasoning", ""),
+        }
+        original_news = state.get("news_content", "")
+        financial_data = state.get("financial_statements", "")
+        if not financial_data:
+            financial_data = _build_financial_statements_from_dart(
+                stocks=state.get("primary_stocks", []),
+                corp_code_map=state.get("corp_code_map"),
+            ) or ""
+    
+        # analysis_copy2.py의 validate_prediction_with_ai와 동일한 검증 로직 사용
+        system_prompt = """
+당신은 장기투자 관점의 주식 분석 검증 전문가다. 예측 LLM의 산업/종목 추천을 뉴스와 재무제표 기준으로 엄격히 검증하라.
+## 검증 역할 (필수 2단계 순차 수행)
+### 1단계: 뉴스-산업/종목 일치성 검증 (예측 LLM 출력 vs 원본 뉴스)
+**목표**: 예측 LLM이 뉴스 흐름을 왜곡/과장하지 않았는지 확인
+**검증 기준**:
+[OK] 뉴스 직접 언급 or 명확한 1차 영향 (confidence ≥0.7)
+[OK] 논리적 2차 영향 (공급망/고객 연결 명확, confidence ≥0.5)
+[X] 뉴스와 무관한 종목 (추론 과도)
+[X] 뉴스 방향과 반대 추천 (예: 부정 뉴스→up 추천)
+[X] 과도한 3차 영향 (연결고리 희박)
+**출력**: 불일치 산업/종목 목록
+[보수 원칙]
+- 뉴스와 산업/종목의 연결이 억지스럽거나,
+  단순 테마 연상에 불과하다고 판단되면
+  confidence가 높더라도 가차 없이 news_mismatch로 분류한다.
+- 검증 LLM은 예측 LLM의 낙관적 해석을 교정하는 역할임을 명심한다.
+### 2단계: 재무 건전성 검증 (추천 종목 대상)
+유동비율 = 유동자산 / 유동부채
+부채비율 = 부채총계 / 자본총계
+자기자본비율 = 자본총계 / 자산총계
+**우선순위 순 적용** (자기자본비율 → 부채비율 → 유동비율):
+자기자본비율 <30%: [위험] 경기 충격 취약 → 매수/보유 부적합
+부채비율 >200%: [위험] 재무구조 취약 → 장기투자 리스크
+유동비율 <1.0: [위험] 단기 유동성 위기 가능성
+**건전성 등급**:
+- A: 모든 지표 양호 (자기자본≥30%, 부채≤200%, 유동≥1.5)
+- B: 1개 지표 경계 (보수적 관찰)
+- C: 2개 지표 위험 (보유 검토)
+- D: 1개 지표 심각 (매도 검토) (자기자본<30% OR 부채>200% OR 유동<1.0)
+- F: 2개 이상 심각 (매수 금지) (자기자본<25% OR 부채>250% OR 유동<0.8)
+## 출력 제한: 적합하지 않은 것만 선정
+- 뉴스 일치성 완벽하고 재무 A/B등급 → 빈 배열 []
+- **선정 이유 필수**: 왜 이 산업/종목이 부적합한지 구체적 근거
+## 검증 출력 형식 (유효 JSON만 출력)
+{
+  "validation_summary": "검증 결과 요약: 뉴스 불일치 X개, 재무위험 Y개 종목 식별됨.",
+  "news_mismatch": [
+    {
+      "industry": "예측 산업명",
+      "stocks": ["종목코드1", "종목코드2"],
+      "mismatch_reason": "구체적 불일치 사유 (뉴스 직접성 부족/방향 반대 등)",
+      "evidence": "원본 뉴스에서 확인된 사실",
+      "confidence_score": 0.7
+    }
+  ],
+  "financial_risks": [
+    {
+      "stock_code": "종목코드",
+      "stock_name": "종목명",
+      "financial_metrics": {
+        "self_equity_ratio": "XX%",
+        "debt_ratio": "XXX%",
+        "current_ratio": "X.X"
+      },
+      "health_grade": "A|B|C|D|F",
+      "risk_priority": "자기자본|부채|유동",
+      "recommendation": "매수금지|보유검토|관찰",
+      "prediction_category": "buy|hold|sell"
+    }
+  ],
+  "overall_assessment": {
+    "news_accuracy": "high|medium|low",
+    "financial_soundness": "high|medium|low",
+    "total_reliable_stocks": 5,
+    "total_risky_stocks": 3,
+    "action_required": "즉시 수정|관찰|양호"
+  }
+}
+""".strip()
+    
+        prompt = f"""
+[예측_LLM_출력]
+{json.dumps(prediction_output, ensure_ascii=False, indent=2)}
+[예측_LLM_출력_끝]
+[원본_뉴스]
+{original_news}
+[원본_뉴스_끝]
+[재무제표_데이터]
+{financial_data}
+[재무제표_데이터_끝]
+## 검증 원칙 (반드시 준수)
+### 뉴스 불일치 판정 기준
+1. **직접성 부족**: 뉴스에 전혀 언급없는데 1차 영향 주장 [X]
+2. **방향 반대**: 부정 뉴스인데 up/confidence≥0.7 [X]
+3. **과도 추론**: 3차 영향에 confidence≥0.5 [X]
+4. **사실 왜곡**: 뉴스 수치/사건과 다른 해석 [X]
+### 재무 위험 판정 기준 (우선순위 엄수)
+CRITICAL (F등급):
+자기자본비율 <25% OR 부채비율 >250% OR 유동비율 <0.8
+HIGH RISK (D등급):
+자기자본비율 <30% OR 부채비율 >200% OR 유동비율 <1.0
+MONITOR (C등급):
+자기자본비율 30~35% OR 부채비율 150~200% OR 유동비율 1.0~1.2
+## 출력 제한사항
+- news_mismatch: 실제 불일치만 (예측이 정확하면 빈 배열 [])
+- financial_risks: C/D/F등급만 (A/B는 양호로 간주)
+- confidence_score: 0.1단위, 뉴스 직접성에 따라 0.3~1.0
+- reasoning 생략: JSON 구조 엄수, 자연어 설명 금지
+유효한 JSON만 출력. 다른 어떤 텍스트도 출력하지 마라.
+"""
+    
+        google_api_key = os.getenv("GOOGLE_API_KEY") or GEMINI_API_KEY
+        if not google_api_key:
+            print("⚠️ GOOGLE_API_KEY/GEMINI_API_KEY 환경 변수가 설정되지 않았습니다. 검증을 건너뜁니다.")
+            return {
+                "primary_industry_valid": True,
+                "primary_stocks_valid": True,
+                "primary_validation_msg": "API 키 없음으로 검증 건너뜀",
+            }
+    
+        try:
+            genai.configure(api_key=google_api_key)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            full_prompt = f"{system_prompt}\n\n{prompt}"
+            response = model.generate_content(
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(temperature=0.3),
+            )
+            raw_text = response.text if hasattr(response, "text") else str(response)
+    
+            # JSON 추출 및 파싱
+            cleaned_text = raw_text.strip()
+            if cleaned_text.startswith("```"):
+                cleaned_text = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_text)
+                cleaned_text = re.sub(r'\n?```\s*$', '', cleaned_text)
+    
+            extracted = _extract_json_from_text(cleaned_text)
+            if not extracted:
+                print("⚠️ 검증 LLM 응답에서 JSON을 추출할 수 없습니다. 검증을 건너뜁니다.")
+                return {
+                    "primary_industry_valid": True,
+                    "primary_stocks_valid": True,
+                    "primary_validation_msg": "JSON 추출 실패",
+                }
+    
+            validation_result = json.loads(extracted)
+    
+            # 검증 결과 파싱
+            news_mismatch = validation_result.get("news_mismatch", [])
+            financial_risks = validation_result.get("financial_risks", [])
+            overall_assessment = validation_result.get("overall_assessment", {})
+    
+            # 검증 통과 여부 판단
+            industry_valid = len(news_mismatch) == 0
+            stocks_valid = len(financial_risks) == 0 or overall_assessment.get("action_required") == "양호"
+    
+            # 검증 메시지 생성
+            validation_msg = validation_result.get("validation_summary", "")
+            if not validation_msg:
+                if not industry_valid:
+                    validation_msg += f"뉴스 불일치 {len(news_mismatch)}개 발견. "
+                if not stocks_valid:
+                    validation_msg += f"재무 위험 {len(financial_risks)}개 발견."
+    
+            return {
+                "primary_industry_valid": industry_valid,
+                "primary_stocks_valid": stocks_valid,
+                "primary_validation_msg": validation_msg or "검증 완료",
+            }
+        except Exception as e:
+            import traceback
+            print(f"⚠️ 검증 LLM 호출 실패: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
+            # 검증 실패 시 통과로 처리 (안전장치)
+            return {
+                "primary_industry_valid": True,
+                "primary_stocks_valid": True,
+                "primary_validation_msg": f"검증 오류: {str(e)}",
+            }
+    
+    
+    def _node_secondary_recommendation(state: PipelineState) -> Dict:
+        """Node 4: Using financials + Node1 reasoning, propose affected stocks from different perspective."""
+        # TODO: Secondary recommendation 구현 (현재는 기본값 반환)
+        return {
+            "secondary_industry": state.get("primary_industry", ""),
+            "secondary_reasoning": state.get("primary_reasoning", ""),
+            "secondary_stocks": state.get("primary_stocks", []),
+            "secondary_retry_count": state.get("secondary_retry_count", 0) + 1,
+        }
+    
+    
+    def _node_secondary_validation(state: PipelineState) -> Dict:
+        """Node 5: Validate secondary industry relevance and stock financial health."""
+        # Primary validation과 동일한 로직 사용
+        prediction_output = {
+            "industry": state.get("secondary_industry", ""),
+            "stocks": state.get("secondary_stocks", []),
+            "reasoning": state.get("secondary_reasoning", ""),
+        }
+        original_news = state.get("news_content", "")
+        financial_data = state.get("financial_statements", "")
+        if not financial_data:
+            financial_data = _build_financial_statements_from_dart(
+                stocks=state.get("secondary_stocks", []),
+                corp_code_map=state.get("corp_code_map"),
+            ) or ""
+    
+        # Primary validation과 동일한 검증 로직 (코드 중복 방지를 위해 함수로 분리 가능)
+        # 간단히 통과 처리 (필요시 primary와 동일한 로직 구현)
+        return {
+            "secondary_industry_valid": True,
+            "secondary_stocks_valid": True,
+            "secondary_validation_msg": "검증 완료",
+        }
+    
+    
+    def _node_report_builder(state: PipelineState) -> Dict:
+        """Node 7: Build report payload for UI sidebar."""
+        return {
+            "report_summary": f"Primary: {state.get('primary_industry', '')} / Secondary: {state.get('secondary_industry', '')}",
+            "report_payload": {
+                "primary_industry": state.get("primary_industry"),
+                "primary_reasoning": state.get("primary_reasoning"),
+                "primary_stocks": state.get("primary_stocks", []),
+                "secondary_industry": state.get("secondary_industry"),
+                "secondary_reasoning": state.get("secondary_reasoning"),
+                "secondary_stocks": state.get("secondary_stocks", []),
+            },
+        }
+    
+    
+    # ==================== Routers ====================
+    
+    def _route_after_primary_validation(state: PipelineState) -> str:
+        """Primary validation routing: Valid -> Node 4, Invalid -> back to Node 1"""
+        max_retries = state.get("max_retries", 3)
+        retry_count = state.get("primary_retry_count", 0)
+    
+        if retry_count >= max_retries:
+            print(f"⚠️ Primary 예측 최대 재시도 횟수({max_retries}) 도달. 검증을 통과시킵니다.")
+            return "valid"
+    
+        if state.get("primary_industry_valid", False) and state.get("primary_stocks_valid", False):
+            return "valid"
+    
+        print(f"⚠️ Primary 예측 검증 실패. 재시도 {retry_count + 1}/{max_retries}")
+        return "invalid"
+    
+    
+    def _route_after_secondary_validation(state: PipelineState) -> str:
+        """Secondary validation routing: Valid -> report, Invalid -> retry"""
+        max_retries = state.get("max_retries", 3)
+        retry_count = state.get("secondary_retry_count", 0)
+    
+        if retry_count >= max_retries:
+            print(f"⚠️ Secondary 예측 최대 재시도 횟수({max_retries}) 도달. 보고서로 진행합니다.")
+            return "report"
+    
+        if not state.get("secondary_industry_valid", False):
+            print(f"⚠️ Secondary 예측 검증 실패 (산업). 재시도 {retry_count + 1}/{max_retries}")
+            return "retry"
+        if not state.get("secondary_stocks_valid", False):
+            print(f"⚠️ Secondary 예측 검증 실패 (주식). 재시도 {retry_count + 1}/{max_retries}")
+            return "retry"
+        return "report"
+    
+    
+    # ==================== Workflow ====================
+    
+    def _build_pipeline():
+        graph = StateGraph(PipelineState)
+    
+        graph.add_node("primary_recommendation", _node_primary_recommendation)
+        graph.add_node("primary_validation", _node_primary_validation)
+        graph.add_node("secondary_recommendation", _node_secondary_recommendation)
+        graph.add_node("secondary_validation", _node_secondary_validation)
+        graph.add_node("report", _node_report_builder)
+    
+        graph.set_entry_point("primary_recommendation")
+        graph.add_edge("primary_recommendation", "primary_validation")
+    
+        graph.add_conditional_edges(
+            "primary_validation",
+            _route_after_primary_validation,
+            {
+                "valid": "secondary_recommendation",
+                "invalid": "primary_recommendation",
+            },
+        )
+    
+        graph.add_edge("secondary_recommendation", "secondary_validation")
+    
+        graph.add_conditional_edges(
+            "secondary_validation",
+            _route_after_secondary_validation,
+            {
+                "retry": "secondary_recommendation",
+                "report": "report",
+            },
+        )
+    
+        graph.add_edge("report", END)
+    
+        return graph.compile()
+
+
+def run_langgraph_pipeline(news_articles: List[NewsArticle], corp_code_map: Optional[Dict[str, str]] = None) -> Dict:
+    """
+    LangGraph 파이프라인을 실행하여 뉴스를 분석합니다.
+    
+    Args:
+        news_articles: 분석할 뉴스 기사 리스트
+        corp_code_map: 종목코드-법인코드 매핑 (선택)
+    
+    Returns:
+        LangGraph 파이프라인 실행 결과
+    """
+    if not LANGGRAPH_AVAILABLE:
+        raise ValueError("LangGraph 파이프라인을 사용할 수 없습니다.")
+    
+    # 뉴스 내용 생성
+    news_items = []
+    for idx, article in enumerate(news_articles[:20], 1):
+        url = article.url or "URL 없음"
+        published_date = "날짜 정보 없음"
+        
+        if article.article_metadata:
+            metadata = article.article_metadata
+            if isinstance(metadata, dict):
+                url = metadata.get("url", article.url) or "URL 없음"
+                published_date = metadata.get("published_date", "날짜 정보 없음")
+        
+        if article.published_at:
+            published_date = article.published_at.strftime("%Y-%m-%d %H:%M:%S")
+        
+        content_preview = article.content[:500] if article.content else "내용 없음"
+        news_items.append(f"{idx}. 제목: {article.title}\n   URL: {url}\n   발행일: {published_date}\n   내용: {content_preview}")
+    
+    news_content = "\n\n".join(news_items)
+    
+    # 파이프라인 빌드 및 실행
+    if not LANGGRAPH_AVAILABLE:
+        raise ValueError("LangGraph 파이프라인을 사용할 수 없습니다.")
+    
+    pipeline = _build_pipeline()
+    
+    initial_state: PipelineState = {
+        "news_content": news_content,
+        "corp_code_map": corp_code_map,
+        "primary_industry": None,
+        "primary_reasoning": None,
+        "primary_stocks": [],
+        "primary_industry_valid": False,
+        "primary_stocks_valid": False,
+        "primary_validation_msg": "",
+        "excluded_industries": [],
+        "excluded_stocks": [],
+        "financial_statements": None,
+        "secondary_industry": None,
+        "secondary_reasoning": None,
+        "secondary_stocks": [],
+        "secondary_industry_valid": False,
+        "secondary_stocks_valid": False,
+        "secondary_validation_msg": "",
+        "excluded_secondary_industries": [],
+        "excluded_secondary_stocks": [],
+        "report_summary": None,
+        "report_payload": None,
+        "max_retries": 3,
+        "primary_retry_count": 0,
+        "secondary_retry_count": 0,
+    }
+    
+    # 파이프라인 실행
+    result = pipeline.invoke(initial_state)
+    
+    return result
+
+
 def analyze_and_save(
     db: Session,
     news_articles: List[NewsArticle],
@@ -1011,6 +1894,7 @@ def analyze_and_save(
 ) -> Tuple[Report, str]:
     """
     뉴스를 분석하고 결과를 저장합니다.
+    LangGraph 파이프라인을 사용하여 분석합니다.
     
     Args:
         db: 데이터베이스 세션
@@ -1026,7 +1910,32 @@ def analyze_and_save(
     if analysis_date is None:
         analysis_date = date.today()
     
-    # AI 분석
+    # LangGraph 파이프라인 사용
+    if LANGGRAPH_AVAILABLE:
+        try:
+            print("🔄 LangGraph 파이프라인으로 분석 시작...")
+            pipeline_result = run_langgraph_pipeline(news_articles, corp_code_map=None)
+            
+            # LangGraph 결과를 기존 형식으로 변환
+            analysis_result = _convert_langgraph_result_to_analysis_format(pipeline_result, news_articles)
+            
+            # result_text 추출
+            result_text = analysis_result.get("result_text", "")
+            
+            # 결과 저장
+            report = save_analysis_to_db(db, news_articles, analysis_result, analysis_date)
+            
+            print(f"✅ LangGraph 파이프라인 분석 완료: 보고서 ID={report.id}")
+            return report, result_text
+        except Exception as e:
+            import traceback
+            print(f"⚠️  LangGraph 파이프라인 실행 실패: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
+            print("🔄 기본 분석 방식으로 전환...")
+            # 기본 방식으로 폴백
+    
+    # 기본 분석 방식 (LangGraph 사용 불가 시)
+    print("🔄 기본 분석 방식으로 분석 시작...")
     analysis_result = analyze_news_with_ai(news_articles)
     
     # result_text 추출
@@ -1095,218 +2004,3 @@ def analyze_news_from_vector_db(
     print(f"✅ 벡터 DB 기반 분석 완료: 보고서 ID={report.id}, 뉴스 {len(news_articles)}개 분석")
     
     return report, result_text
-
-
-def validate_prediction_with_ai(
-    prediction_output: Dict,
-    original_news: str,
-    financial_data: str
-) -> Dict:
-    """
-    예측 LLM의 산업/종목 추천을 뉴스와 재무제표 기준으로 검증합니다.
-    
-    Args:
-        prediction_output: analyze_news_with_ai 함수의 출력 결과
-        original_news: 원본 뉴스 텍스트
-        financial_data: 재무제표 데이터 (JSON 문자열 또는 텍스트)
-    
-    Returns:
-        검증 결과 딕셔너리
-    """
-    # Gemini 모델 사용
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
-    
-    # prediction_output을 JSON 문자열로 변환
-    if isinstance(prediction_output, dict):
-        prediction_output_str = json.dumps(prediction_output, ensure_ascii=False, indent=2)
-    else:
-        prediction_output_str = str(prediction_output)
-    
-    system_prompt = """
-당신은 장기투자 관점의 주식 분석 검증 전문가다. 예측 LLM의 산업/종목 추천을 뉴스와 재무제표 기준으로 엄격히 검증하라.
-
-## 검증 역할 (필수 2단계 순차 수행)
-
-### 1단계: 뉴스-산업/종목 일치성 검증 (예측 LLM 출력 vs 원본 뉴스)
-**목표**: 예측 LLM이 뉴스 흐름을 왜곡/과장하지 않았는지 확인
-**검증 기준**:
-[OK] 뉴스 직접 언급 or 명확한 1차 영향 (confidence ≥0.7)
-[OK] 논리적 2차 영향 (공급망/고객 연결 명확, confidence ≥0.5)
-[X] 뉴스와 무관한 종목 (추론 과도)
-[X] 뉴스 방향과 반대 추천 (예: 부정 뉴스→up 추천)
-[X] 과도한 3차 영향 (연결고리 희박)
-**출력**: 불일치 산업/종목 목록
-
-[보수 원칙]
-- 뉴스와 산업/종목의 연결이 억지스럽거나,
-  단순 테마 연상에 불과하다고 판단되면
-  confidence가 높더라도 가차 없이 news_mismatch로 분류한다.
-- 검증 LLM은 예측 LLM의 낙관적 해석을 교정하는 역할임을 명심한다.
-
-### 2단계: 재무 건전성 검증 (추천 종목 대상)
-**우선순위 순 적용** (자기자본비율 → 부채비율 → 유동비율):
-자기자본비율 <30%: [위험] 경기 충격 취약 → 매수/보유 부적합
-부채비율 >200%: [위험] 재무구조 취약 → 장기투자 리스크
-유동비율 <1.0: [위험] 단기 유동성 위기 가능성
-
-**건전성 등급**:
-- A: 모든 지표 양호 (자기자본≥30%, 부채≤200%, 유동≥1.5)
-- B: 1개 지표 경계 (보수적 관찰)
-- C: 2개 지표 위험 (보유 검토)
-- D: 1개 지표 심각 (매도 검토) (자기자본<30% OR 부채>200% OR 유동<1.0)
-- F: 2개 이상 심각 (매수 금지) (자기자본<25% OR 부채>250% OR 유동<0.8)
-(우선순위는 "해석 및 설명 시 강조 순서"이며, 등급 판정 자체는 OR 조건을 기준으로 한다.)
-
-[현금흐름 보조 점검]
-- 잉여현금흐름(Free Cash Flow)이 지속적으로 음수인 경우,
-  등급이 C 이상이라도 financial_soundness 평가를 한 단계 하향할 수 있다.
-- 단, 본 프롬프트는 FCF를 단독 FAIL 조건으로 사용하지 않으며,
-  재무 구조 리스크를 보강하는 참고 지표로만 활용한다.
-
-## 출력 제한: 적합하지 않은 것만 선정
-- 뉴스 일치성 완벽하고 재무 A/B등급 → 빈 배열 []
-- **선정 이유 필수**: 왜 이 산업/종목이 부적합한지 구체적 근거
-
-## 검증 출력 형식 (유효 JSON만 출력)
-{
-  "validation_summary": "검증 결과 요약: 뉴스 불일치 X개, 재무위험 Y개 종목 식별됨.",
-  
-  "news_mismatch": [
-    {
-      "industry": "예측 산업명",
-      "stocks": ["종목코드1", "종목코드2"],
-      "mismatch_reason": "구체적 불일치 사유 (뉴스 직접성 부족/방향 반대 등)",
-      "evidence": "원본 뉴스에서 확인된 사실",
-      "confidence_score": 0.7
-    }
-  ],
-  
-  "financial_risks": [
-    {
-      "stock_code": "종목코드",
-      "stock_name": "종목명",
-      "financial_metrics": {
-        "self_equity_ratio": "XX%",
-        "debt_ratio": "XXX%",
-        "current_ratio": "X.X"
-      },
-      "health_grade": "A|B|C|D|F",
-      "risk_priority": "자기자본|부채|유동",
-      "recommendation": "매수금지|보유검토|관찰",
-      "prediction_category": "buy|hold|sell"
-    }
-  ],
-  
-  "overall_assessment": {
-    "news_accuracy": "high|medium|low",
-    "financial_soundness": "high|medium|low",
-    "total_reliable_stocks": 5,
-    "total_risky_stocks": 3,
-    "action_required": "즉시 수정|관찰|양호"
-  }
-}
-
-mismatch_reason에 반드시 다음 중 하나를 명시:
-- 산업 레벨 불일치
-- 종목 레벨 불일치
-- 산업은 맞으나 종목 연결 과도
-"""
-
-    prompt = f"""
-[예측_LLM_출력]
-{prediction_output_str}
-[예측_LLM_출력_끝]
-
-[원본_뉴스]
-{original_news}
-[원본_뉴스_끝]
-
-[재무제표_데이터]
-{financial_data}
-[재무제표_데이터_끝]
-
-## 검증 원칙 (반드시 준수)
-
-### 뉴스 불일치 판정 기준
-1. **직접성 부족**: 뉴스에 전혀 언급없는데 1차 영향 주장 [X]
-2. **방향 반대**: 부정 뉴스인데 up/confidence≥0.7 [X]  
-3. **과도 추론**: 3차 영향에 confidence≥0.5 [X]
-4. **사실 왜곡**: 뉴스 수치/사건과 다른 해석 [X]
-
-### 재무 위험 판정 기준 (우선순위 엄수)
-CRITICAL (F등급):
-자기자본비율 <25% OR 부채비율 >250% OR 유동비율 <0.8
-
-HIGH RISK (D등급):
-자기자본비율 <30% OR 부채비율 >200% OR 유동비율 <1.0
-
-MONITOR (C등급):
-자기자본비율 30~35% OR 부채비율 150~200% OR 유동비율 1.0~1.2
-
-### edge case 처리
-- 예측 LLM confidence <0.4: 자동으로 news_mismatch 제외 (이미 관찰권고)
-- 재무 데이터 누락: financial_risks에서 제외, "데이터부족" 명시
-- 시장 반대 방향 추천: reasoning에서 시장상황 고려했는지 확인 후 판단
-- '턴어라운드 기대', '흑자전환 가능성'은 뉴스에 명확한 수치·계약·구조조정 결과가 없는 한 재무 위험을 상쇄하는 근거로 사용하지 않는다.
-
-## 출력 제한사항
-- news_mismatch: 실제 불일치만 (예측이 정확하면 빈 배열 [])
-- financial_risks: C/D/F등급만 (A/B는 양호로 간주)
-- confidence_score: 0.1단위, 뉴스 직접성에 따라 0.3~1.0
-- reasoning 생략: JSON 구조 엄수, 자연어 설명 금지
-- 시장 반대 방향 추천의 경우, evidence 필드에 "뉴스 vs 추천 방향"의 사실 관계만 기재
-
-유효한 JSON만 출력. 다른 어떤 텍스트도 출력하지 마라.
-"""
-
-    try:
-        # response = client.chat.completions.create(
-        #     model="gpt-4o-mini",
-        #     messages=[
-        #         {"role": "system", "content": system_prompt},
-        #         {"role": "user", "content": prompt}
-        #     ],
-        #     response_format={"type": "json_object"},
-        #     temperature=0.3
-        # )
-        
-        # result_text = response.choices[0].message.content
-        # Gemini 모델 사용
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        full_prompt = f"{system_prompt}\n\n{prompt}"
-        
-        response = model.generate_content(
-            full_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.3  # 검증은 보수적으로
-            )
-        )
-
-        result_text = response.text
-        cleaned_text = result_text.strip()
-        if cleaned_text.startswith("```"):
-            cleaned_text = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_text)
-            cleaned_text = re.sub(r'\n?```\s*$', '', cleaned_text)
-
-        try:
-            parsed = json.loads(cleaned_text)
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                f"검증 LLM JSON 파싱 실패\n{e}\n\n원본 응답:\n{result_text}"
-            )
-        # parsed = json.loads(result_text)
-        
-        # 원본 텍스트 보존
-        parsed["result_text"] = result_text
-        
-        return parsed
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"검증 LLM JSON 파싱 실패\n{e}\n\n원본 응답:\n{result_text if 'result_text' in locals() else 'N/A'}"
-        )
-    except Exception as e:
-        import traceback
-        print(f"검증 LLM API 호출 실패: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        raise

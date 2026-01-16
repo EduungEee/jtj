@@ -1,11 +1,14 @@
 """
 AI 분석 모듈
-OpenAI API를 사용하여 뉴스를 분석하고 산업/주식 예측을 수행합니다.
+Gemini API를 사용하여 뉴스를 분석하고 산업/주식 예측을 수행합니다.
 """
 import os
 import json
+import csv
+import re
 from typing import List, Dict, Optional, Tuple
 from openai import OpenAI
+import google.generativeai as genai
 from sqlalchemy.orm import Session
 from sqlalchemy import text, and_
 from datetime import date, datetime, timedelta
@@ -21,6 +24,11 @@ if backend_path not in sys.path:
 from models.models import NewsArticle, Report, ReportIndustry, ReportStock
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Gemini 클라이언트 초기화
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 def _safe_json_loads(value: object) -> Optional[dict]:
     """
@@ -524,6 +532,9 @@ def analyze_news_with_ai(news_articles: List[NewsArticle]) -> Dict:
   불확실성이 크면 reasoning에 그 사실을 명시하라.
 - 신뢰도(confidence_score)가 낮은 경우(예: 0.4 미만)에는
   구체적인 매수/매도보다는 관찰·모니터링 대상으로 서술하라.
+- reasoning의 첫 문장은 반드시 impact_chain_level과 propagation_path 범위를 명시한다.
+- impact_chain_level보다 높은 단계(예: 1차 종목에서 2차·3차 영향)는
+  reasoning과 propagation_path 어디에도 언급하지 않는다.
 
 연쇄 영향 분석 기준 (필수):
 1) 1차 영향 (confidence_score ≥ 0.7 필수)
@@ -585,24 +596,31 @@ JSON 스키마:
                 "confidence_score": 0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0,
                 "impact_chain_level": 1 | 2 | 3,
                 "propagation_path": [
-                    {
-                        "level_1": {
-                            "1차: 뉴스 직접 언급 → [구체적 사건]",
-                            "투자 논리: [매출/이익 영향 경로]",
-                            "신뢰도 근거: [뉴스 직접성/수치 명시]",
-                        },
-                        "level_2": {
-                            "1차: [1차 산업/종목] 수요/공급 변화",
-                            "2차: [공급망 연결고리] → 본 종목 영향", 
-                            "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
-                        },
-                        "level_3": {
-                            "1차: [1차 사건]",
-                            "2차: [2차 산업 영향]", 
-                            "3차: [인프라/후행 수혜] → 본 종목",
-                            "신뢰도 근거: [과거 유사 사례/투자 사이클]",
-                        }
-                    }
+                {
+                    "level": 1,
+                    "details": [
+                        "1차: 뉴스 직접 언급 → [구체적 사건]",
+                        "투자 논리: [매출/이익 영향 경로]",
+                        "신뢰도 근거: [뉴스 직접성/수치 명시]",
+                    ]
+                },
+                {
+                    "level": 2,
+                    "details": [
+                        "1차: [1차 산업/종목] 수요/공급 변화",
+                        "2차: [공급망 연결고리] → 본 종목 영향", 
+                        "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
+                    ]
+                },
+                {
+                    "level": 3,
+                    "details": [
+                        "1차: [1차 사건]",
+                        "2차: [2차 산업 영향]", 
+                        "3차: [인프라/후행 수혜] → 본 종목",
+                        "신뢰도 근거: [과거 유사 사례/투자 사이클]",
+                    ]
+                }
                 ],
                 "reasoning": "string",
                 "news_drivers": ["string"],
@@ -624,24 +642,31 @@ JSON 스키마:
                 "confidence_score": 0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0,
                 "impact_chain_level": 1 | 2 | 3,
                 "propagation_path": [
-                    {
-                        "level_1": {
-                            "1차: 뉴스 직접 언급 → [구체적 사건]",
-                            "투자 논리: [매출/이익 영향 경로]",
-                            "신뢰도 근거: [뉴스 직접성/수치 명시]",
-                        },
-                        "level_2": {
-                            "1차: [1차 산업/종목] 수요/공급 변화",
-                            "2차: [공급망 연결고리] → 본 종목 영향", 
-                            "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
-                        },
-                        "level_3": {
-                            "1차: [1차 사건]",
-                            "2차: [2차 산업 영향]", 
-                            "3차: [인프라/후행 수혜] → 본 종목",
-                            "신뢰도 근거: [과거 유사 사례/투자 사이클]",
-                        }
-                    }
+                {
+                    "level": 1,
+                    "details": [
+                        "1차: 뉴스 직접 언급 → [구체적 사건]",
+                        "투자 논리: [매출/이익 영향 경로]",
+                        "신뢰도 근거: [뉴스 직접성/수치 명시]",
+                    ]
+                },
+                {
+                    "level": 2,
+                    "details": [
+                        "1차: [1차 산업/종목] 수요/공급 변화",
+                        "2차: [공급망 연결고리] → 본 종목 영향", 
+                        "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
+                    ]
+                },
+                {
+                    "level": 3,
+                    "details": [
+                        "1차: [1차 사건]",
+                        "2차: [2차 산업 영향]", 
+                        "3차: [인프라/후행 수혜] → 본 종목",
+                        "신뢰도 근거: [과거 유사 사례/투자 사이클]",
+                    ]
+                }
                 ],
                 "reasoning": "string",
                 "news_drivers": ["string"],
@@ -663,24 +688,31 @@ JSON 스키마:
                 "confidence_score": 0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0,
                 "impact_chain_level": 1 | 2 | 3,
                 "propagation_path": [
-                    {
-                        "level_1": {
-                            "1차: 뉴스 직접 언급 → [구체적 사건]",
-                            "투자 논리: [매출/이익 영향 경로]",
-                            "신뢰도 근거: [뉴스 직접성/수치 명시]",
-                        },
-                        "level_2": {
-                            "1차: [1차 산업/종목] 수요/공급 변화",
-                            "2차: [공급망 연결고리] → 본 종목 영향", 
-                            "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
-                        },
-                        "level_3": {
-                            "1차: [1차 사건]",
-                            "2차: [2차 산업 영향]", 
-                            "3차: [인프라/후행 수혜] → 본 종목",
-                            "신뢰도 근거: [과거 유사 사례/투자 사이클]",
-                        }
-                    }
+                {
+                    "level": 1,
+                    "details": [
+                        "1차: 뉴스 직접 언급 → [구체적 사건]",
+                        "투자 논리: [매출/이익 영향 경로]",
+                        "신뢰도 근거: [뉴스 직접성/수치 명시]",
+                    ]
+                },
+                {
+                    "level": 2,
+                    "details": [
+                        "1차: [1차 산업/종목] 수요/공급 변화",
+                        "2차: [공급망 연결고리] → 본 종목 영향", 
+                        "신뢰도 근거: [역사적 사례/매출 비중/고객사 명시]",
+                    ]
+                },
+                {
+                    "level": 3,
+                    "details": [
+                        "1차: [1차 사건]",
+                        "2차: [2차 산업 영향]", 
+                        "3차: [인프라/후행 수혜] → 본 종목",
+                        "신뢰도 근거: [과거 유사 사례/투자 사이클]",
+                    ]
+                }
                 ],
                 "reasoning": "string",
                 "news_drivers": ["string"],
@@ -738,11 +770,24 @@ JSON 스키마:
 {news_summary}
 [뉴스_데이터_끝]
 
+propagation_path 출력 규칙 (필수):
+
+- propagation_path에는 impact_chain_level 이하의 단계만 포함한다.
+- impact_chain_level = 1 인 경우:
+  → propagation_path에는 level 1만 포함하고, level 2·3은 절대 출력하지 않는다.
+- impact_chain_level = 2 인 경우:
+  → propagation_path에는 level 1, level 2까지만 포함하고 level 3은 출력하지 않는다.
+- impact_chain_level = 3 인 경우:
+  → propagation_path에는 level 1, level 2, level 3을 모두 포함할 수 있다.
+- 위 규칙을 어길 경우 출력은 무효로 간주한다.
+
 주의:
 - summary는 약 500~800자 분량으로 작성하되, JSON 구조를 깨지 않는 것을 최우선으로 한다.
 - industries 배열은 최소 1개 이상 포함하되, 의미 있는 산업만 넣는다.
 - 종목 코드가 불명확하면 "stock_code": "" 로 두고, reasoning에 그 이유를 적는다.
 - 유효한 JSON만 출력하고, 그 외 어떤 텍스트도 출력하지 않는다.
+- propagation_path 배열의 길이는 impact_chain_level 값과 정확히 일치해야 한다.
+    - 예: impact_chain_level = 1 → propagation_path 길이 = 1
 
 추가 요구사항:
 - 각 종목의 reasoning에는 반드시 다음 세 가지가 모두 포함되도록 하라.
@@ -834,36 +879,309 @@ json
 
     prompt = prompt_header + example_block
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # 비용 절감을 위해 mini 모델 사용
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.7
+    # Gemini 모델 사용
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    full_prompt = f"{system_prompt}\n\n{prompt}"
+    
+    response = model.generate_content(
+        full_prompt,
+        generation_config=genai.types.GenerationConfig(
+            temperature=0.2
         )
-        
-        result_text = response.choices[0].message.content
-        result = json.loads(result_text)
-        
-        # 프롬프트/스키마 변경에도 후속 로직이 깨지지 않도록 정규화
-        result = _normalize_analysis_result(result)
+    )
 
-        # result_text를 결과에 포함
-        result["result_text"] = result_text
-        
-        return result
+    result_text = response.text
+    
+    # 마크다운 코드 블록 제거 (```json ... ``` 형태)
+    cleaned_text = result_text.strip()
+    if cleaned_text.startswith("```"):
+        cleaned_text = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_text)
+        cleaned_text = re.sub(r'\n?```\s*$', '', cleaned_text)
+
+    try:
+        parsed = json.loads(cleaned_text)
     except json.JSONDecodeError as e:
-        print(f"JSON 파싱 실패: {e}")
-        print(f"응답 텍스트: {result_text if 'result_text' in locals() else 'N/A'}")
-        raise ValueError(f"AI 분석 결과를 파싱할 수 없습니다: {e}")
-    except Exception as e:
-        import traceback
-        print(f"OpenAI API 호출 실패: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        raise
+        raise ValueError(
+            f"LLM JSON 파싱 실패\n{e}\n\n원본 응답:\n{result_text}"
+        )
+
+    # 후속 DB 저장 로직 보호용 정규화
+    parsed = _normalize_analysis_result(parsed)
+
+    # 원본 텍스트도 같이 보존 (디버깅/재현용)
+    parsed["result_text"] = result_text
+
+    return parsed
+
+
+
+def validate_prediction_with_ai(
+    prediction_output: Dict,
+    original_news: str,
+    financial_data: str
+) -> Dict:
+    """
+    예측 LLM의 산업/종목 추천을 뉴스와 재무제표 기준으로 검증합니다.
+    
+    Args:
+        prediction_output: analyze_news_with_ai 함수의 출력 결과
+        original_news: 원본 뉴스 텍스트
+        financial_data: 재무제표 데이터 (JSON 문자열 또는 텍스트)
+    
+    Returns:
+        검증 결과 딕셔너리
+    """
+    client = get_openai_client()
+    if not client:
+        raise ValueError("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+    
+    # prediction_output을 JSON 문자열로 변환
+    if isinstance(prediction_output, dict):
+        prediction_output_str = json.dumps(prediction_output, ensure_ascii=False, indent=2)
+    else:
+        prediction_output_str = str(prediction_output)
+    
+    system_prompt = """
+당신은 장기투자 관점의 주식 분석 검증 전문가다. 예측 LLM의 산업/종목 추천을 뉴스와 재무제표 기준으로 엄격히 검증하라.
+
+## 검증 역할 (필수 2단계 순차 수행)
+
+### 1단계: 뉴스-산업/종목 일치성 검증 (예측 LLM 출력 vs 원본 뉴스)
+**목표**: 예측 LLM이 뉴스 흐름을 왜곡/과장하지 않았는지 확인
+**검증 기준**:
+[OK] 뉴스 직접 언급 or 명확한 1차 영향 (confidence ≥0.7)
+[OK] 논리적 2차 영향 (공급망/고객 연결 명확, confidence ≥0.5)
+[X] 뉴스와 무관한 종목 (추론 과도)
+[X] 뉴스 방향과 반대 추천 (예: 부정 뉴스→up 추천)
+[X] 과도한 3차 영향 (연결고리 희박)
+**출력**: 불일치 산업/종목 목록
+
+[보수 원칙]
+- 뉴스와 산업/종목의 연결이 억지스럽거나,
+  단순 테마 연상에 불과하다고 판단되면
+  confidence가 높더라도 가차 없이 news_mismatch로 분류한다.
+- 검증 LLM은 예측 LLM의 낙관적 해석을 교정하는 역할임을 명심한다.
+
+### 2단계: 재무 건전성 검증 (추천 종목 대상)
+**우선순위 순 적용** (자기자본비율 → 부채비율 → 유동비율):
+자기자본비율 <30%: [위험] 경기 충격 취약 → 매수/보유 부적합
+부채비율 >200%: [위험] 재무구조 취약 → 장기투자 리스크
+유동비율 <1.0: [위험] 단기 유동성 위기 가능성
+
+**건전성 등급**:
+- A: 모든 지표 양호 (자기자본≥30%, 부채≤200%, 유동≥1.5)
+- B: 1개 지표 경계 (보수적 관찰)
+- C: 2개 지표 위험 (보유 검토)
+- D: 1개 지표 심각 (매도 검토) (자기자본<30% OR 부채>200% OR 유동<1.0)
+- F: 2개 이상 심각 (매수 금지) (자기자본<25% OR 부채>250% OR 유동<0.8)
+(우선순위는 "해석 및 설명 시 강조 순서"이며, 등급 판정 자체는 OR 조건을 기준으로 한다.)
+
+[현금흐름 보조 점검]
+- 잉여현금흐름(Free Cash Flow)이 지속적으로 음수인 경우,
+  등급이 C 이상이라도 financial_soundness 평가를 한 단계 하향할 수 있다.
+- 단, 본 프롬프트는 FCF를 단독 FAIL 조건으로 사용하지 않으며,
+  재무 구조 리스크를 보강하는 참고 지표로만 활용한다.
+
+## 출력 제한: 적합하지 않은 것만 선정
+- 뉴스 일치성 완벽하고 재무 A/B등급 → 빈 배열 []
+- **선정 이유 필수**: 왜 이 산업/종목이 부적합한지 구체적 근거
+
+## 검증 출력 형식 (유효 JSON만 출력)
+{
+  "validation_summary": "검증 결과 요약: 뉴스 불일치 X개, 재무위험 Y개 종목 식별됨.",
+  
+  "news_mismatch": [
+    {
+      "industry": "예측 산업명",
+      "stocks": ["종목코드1", "종목코드2"],
+      "mismatch_reason": "구체적 불일치 사유 (뉴스 직접성 부족/방향 반대 등)",
+      "evidence": "원본 뉴스에서 확인된 사실",
+      "confidence_score": 0.7
+    }
+  ],
+  
+  "financial_risks": [
+    {
+      "stock_code": "종목코드",
+      "stock_name": "종목명",
+      "financial_metrics": {
+        "self_equity_ratio": "XX%",
+        "debt_ratio": "XXX%",
+        "current_ratio": "X.X"
+      },
+      "health_grade": "A|B|C|D|F",
+      "risk_priority": "자기자본|부채|유동",
+      "recommendation": "매수금지|보유검토|관찰",
+      "prediction_category": "buy|hold|sell"
+    }
+  ],
+  
+  "overall_assessment": {
+    "news_accuracy": "high|medium|low",
+    "financial_soundness": "high|medium|low",
+    "total_reliable_stocks": 5,
+    "total_risky_stocks": 3,
+    "action_required": "즉시 수정|관찰|양호"
+  }
+}
+
+mismatch_reason에 반드시 다음 중 하나를 명시:
+- 산업 레벨 불일치
+- 종목 레벨 불일치
+- 산업은 맞으나 종목 연결 과도
+"""
+
+    prompt = f"""
+[예측_LLM_출력]
+{prediction_output_str}
+[예측_LLM_출력_끝]
+
+[원본_뉴스]
+{original_news}
+[원본_뉴스_끝]
+
+[재무제표_데이터]
+{financial_data}
+[재무제표_데이터_끝]
+
+## 검증 원칙 (반드시 준수)
+
+### 뉴스 불일치 판정 기준
+1. **직접성 부족**: 뉴스에 전혀 언급없는데 1차 영향 주장 [X]
+2. **방향 반대**: 부정 뉴스인데 up/confidence≥0.7 [X]  
+3. **과도 추론**: 3차 영향에 confidence≥0.5 [X]
+4. **사실 왜곡**: 뉴스 수치/사건과 다른 해석 [X]
+
+### 재무 위험 판정 기준 (우선순위 엄수)
+CRITICAL (F등급):
+자기자본비율 <25% OR 부채비율 >250% OR 유동비율 <0.8
+
+HIGH RISK (D등급):
+자기자본비율 <30% OR 부채비율 >200% OR 유동비율 <1.0
+
+MONITOR (C등급):
+자기자본비율 30~35% OR 부채비율 150~200% OR 유동비율 1.0~1.2
+
+### edge case 처리
+- 예측 LLM confidence <0.4: 자동으로 news_mismatch 제외 (이미 관찰권고)
+- 재무 데이터 누락: financial_risks에서 제외, "데이터부족" 명시
+- 시장 반대 방향 추천: reasoning에서 시장상황 고려했는지 확인 후 판단
+- '턴어라운드 기대', '흑자전환 가능성'은 뉴스에 명확한 수치·계약·구조조정 결과가 없는 한 재무 위험을 상쇄하는 근거로 사용하지 않는다.
+
+## 출력 제한사항
+- news_mismatch: 실제 불일치만 (예측이 정확하면 빈 배열 [])
+- financial_risks: C/D/F등급만 (A/B는 양호로 간주)
+- confidence_score: 0.1단위, 뉴스 직접성에 따라 0.3~1.0
+- reasoning 생략: JSON 구조 엄수, 자연어 설명 금지
+- 시장 반대 방향 추천의 경우, evidence 필드에 "뉴스 vs 추천 방향"의 사실 관계만 기재
+
+유효한 JSON만 출력. 다른 어떤 텍스트도 출력하지 마라.
+"""
+
+    # Gemini 모델 사용
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    full_prompt = f"{system_prompt}\n\n{prompt}"
+    
+    response = model.generate_content(
+        full_prompt,
+        generation_config=genai.types.GenerationConfig(
+            temperature=0.3  # 검증은 보수적으로
+        )
+    )
+
+    result_text = response.text
+
+    # response = client.chat.completions.create(
+    #     model="gpt-4o-mini",  # 비용 절감을 위해 mini 모델 사용
+    #     messages=[
+    #         {"role": "system", "content": system_prompt},
+    #         {"role": "user", "content": prompt}
+    #     ],
+    #     response_format={"type": "json_object"},
+    #     temperature=0.2
+    # )
+
+    # # LLM 원본 텍스트
+    # result_text = response.choices[0].message.content
+    
+    # 마크다운 코드 블록 제거 (```json ... ``` 형태)
+    cleaned_text = result_text.strip()
+    if cleaned_text.startswith("```"):
+        cleaned_text = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_text)
+        cleaned_text = re.sub(r'\n?```\s*$', '', cleaned_text)
+
+    try:
+        parsed = json.loads(cleaned_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"검증 LLM JSON 파싱 실패\n{e}\n\n원본 응답:\n{result_text}"
+        )
+
+    # 원본 텍스트 보존
+    parsed["result_text"] = result_text
+
+    return parsed
+
+
+def build_news_summary_from_csv(csv_path: str) -> str:
+    """
+    현대자동차 크롤링 CSV 파일을 읽어 news_summary 형식의 문자열로 변환합니다.
+    (제목, URL, 기재일만 사용하며, 내용은 제목으로 대체합니다.)
+    """
+    news_items: List[str] = []
+
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for idx, row in enumerate(reader, 1):
+            title = (row.get("제목") or "").strip()
+            url = (row.get("URL") or "").strip() or "URL 없음"
+            published_date = (row.get("기재일") or "").strip() or "날짜 정보 없음"
+
+            # CSV에는 본문이 없어, 일단 제목을 내용 프리뷰로 사용
+            content_preview = title or "내용 없음"
+
+            news_items.append(
+                f"""{idx}. 제목: {title}
+   URL: {url}
+   발행일: {published_date}
+   내용: {content_preview}"""
+            )
+
+    return "\n\n".join(news_items)
+
+
+class _CsvArticle:
+    """CSV 데이터를 analyze_news_with_ai에서 사용하는 필드만 가진 간단한 기사 객체로 변환하기 위한 클래스."""
+
+    def __init__(self, title: str, url: str, published_date: str):
+        self.title = title
+        self.url = url
+        # analyze_news_with_ai가 기대하는 최소 메타데이터 구조
+        self.article_metadata = {"url": url, "published_date": published_date}
+        self.published_at = None
+        # CSV에는 본문이 없어, 제목을 내용 프리뷰로 사용
+        self.content = title
+
+
+def build_articles_from_csv(csv_path: str) -> List[_CsvArticle]:
+    """
+    현대자동차 크롤링 CSV를 읽어 analyze_news_with_ai에 넣을 수 있는
+    간단한 기사 객체 리스트로 변환합니다.
+    """
+    articles: List[_CsvArticle] = []
+
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            title = (row.get("제목") or "").strip()
+            url = (row.get("URL") or "").strip() or "URL 없음"
+            published_date = (row.get("기재일") or "").strip() or "날짜 정보 없음"
+            if not title and not url:
+                continue
+            articles.append(_CsvArticle(title=title, url=url, published_date=published_date))
+
+    return articles
+
 
 
 def save_analysis_to_db(
@@ -1033,3 +1351,55 @@ def analyze_news_from_vector_db(
     print(f"✅ 벡터 DB 기반 분석 완료: 보고서 ID={report.id}, 뉴스 {len(news_articles)}개 분석")
     
     return report, result_text
+
+if __name__ == "__main__":
+    # 로컬에서 실행 시 현대자동차 크롤링 CSV를 읽어 요약 포맷과
+    # LLM 분석 결과(JSON)를 둘 다 터미널에서 확인할 수 있도록 합니다.
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_file = os.path.join(base_dir, "현대자동차크롤링.csv")
+
+    # 1) CSV 기반 news_summary 포맷 출력 (프롬프트에 들어가는 원본 텍스트 확인용)
+    summary_text = build_news_summary_from_csv(csv_file)
+    print("===== CSV 기반 news_summary =====")
+    print(summary_text)
+    print("\n===== LLM 분석 결과(JSON) =====")
+
+    # 2) CSV를 기사 객체 리스트로 변환 후, 기존 analyze_news_with_ai 재사용
+    csv_articles = build_articles_from_csv(csv_file)
+    try:
+        analysis_result = analyze_news_with_ai(csv_articles)
+    except Exception as e:
+        print(f"LLM 분석 중 오류가 발생했습니다: {e}")
+        raise
+
+    if not isinstance(analysis_result, dict):
+        print(f"분석 결과 형식이 dict가 아닙니다. type={type(analysis_result)} value={analysis_result!r}")
+    else:
+        # 모델이 생성한 원본 JSON 텍스트가 result_text에 들어있으면 우선 출력
+        result_text = analysis_result.get("result_text")
+        if isinstance(result_text, str) and result_text.strip():
+            print(result_text)
+        else:
+            # result_text가 없으면 파싱된 dict를 pretty JSON으로 출력
+            print(json.dumps(analysis_result, ensure_ascii=False, indent=2))
+        
+        # 3) 검증 LLM 실행 (1분 10초 대기 후)
+        # import time
+        # wait_seconds = 70  # 1분 10초
+        # print(f"\n⏳ 검증 LLM 실행까지 {wait_seconds}초 대기 중...")
+        # time.sleep(wait_seconds)
+        
+        print("\n===== 검증 LLM 결과(JSON) =====")
+        try:
+            validation_result = validate_prediction_with_ai(
+                prediction_output=analysis_result,
+                original_news=summary_text,
+                financial_data="재무제표 데이터 없음 (테스트용)"
+            )
+            validation_text = validation_result.get("result_text")
+            if isinstance(validation_text, str) and validation_text.strip():
+                print(validation_text)
+            else:
+                print(json.dumps(validation_result, ensure_ascii=False, indent=2))
+        except Exception as e:
+            print(f"검증 LLM 실행 중 오류가 발생했습니다: {e}")

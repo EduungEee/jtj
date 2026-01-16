@@ -9,7 +9,7 @@ from datetime import date, datetime
 from typing import Optional
 from app.database import get_db
 from app.news import collect_news
-from app.analysis import analyze_and_save, analyze_news_from_vector_db, validate_prediction_with_ai
+from app.analysis import analyze_and_save, analyze_news_from_vector_db
 from datetime import datetime, timedelta
 import pytz
 import httpx
@@ -72,7 +72,6 @@ class AnalyzeResponse(BaseModel):
     status: str
     message: str
     news_count: int
-    result_text: Optional[str] = Field(None, description="LLM이 생성한 원본 분석 결과 텍스트 (JSON 형식)")
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
@@ -141,71 +140,11 @@ async def analyze_news(
         # 뉴스 개수 계산
         news_count = len(report.news_articles) if report.news_articles else 0
         
-        # 검증 LLM 실행
-        try:
-            # 원본 뉴스 텍스트 생성
-            original_news_items = []
-            for idx, article in enumerate(report.news_articles[:20], 1):
-                url = article.url or "URL 없음"
-                published_date = "날짜 정보 없음"
-                
-                if article.article_metadata:
-                    metadata = article.article_metadata
-                    if isinstance(metadata, dict):
-                        url = metadata.get("url", article.url) or "URL 없음"
-                        published_date = metadata.get("published_date", "날짜 정보 없음")
-                
-                if article.published_at:
-                    published_date = article.published_at.strftime("%Y-%m-%d %H:%M:%S")
-                
-                content_preview = article.content[:500] if article.content else "내용 없음"
-                
-                original_news_items.append(f"""{idx}. 제목: {article.title}
-   URL: {url}
-   발행일: {published_date}
-   내용: {content_preview}""")
-            
-            original_news_text = "\n\n".join(original_news_items)
-            
-            # 분석 결과를 딕셔너리로 변환 (result_text에서 파싱)
-            import json as json_module
-            try:
-                analysis_result = json_module.loads(result_text)
-            except:
-                # result_text가 JSON이 아니면 빈 딕셔너리 사용
-                analysis_result = {"summary": result_text}
-            
-            # 검증 실행
-            validation_result = validate_prediction_with_ai(
-                prediction_output=analysis_result,
-                original_news=original_news_text,
-                financial_data="재무제표 데이터 없음 (테스트용)"
-            )
-            
-            # localhost:8081에 검증 결과 전송
-            async with httpx.AsyncClient() as client:
-                try:
-                    response = await client.post(
-                        "http://localhost:8081/validation",
-                        json=validation_result,
-                        timeout=10.0
-                    )
-                    print(f"✅ 검증 결과를 localhost:8081에 전송 완료: {response.status_code}")
-                except Exception as e:
-                    print(f"⚠️  localhost:8081 전송 실패: {e}")
-                    # 전송 실패해도 분석 결과는 반환
-        except Exception as e:
-            import traceback
-            print(f"⚠️  검증 LLM 실행 중 오류 발생 (분석은 완료됨): {e}")
-            print(f"Traceback: {traceback.format_exc()}")
-            # 검증 실패해도 분석 결과는 반환
-        
         return AnalyzeResponse(
             report_id=report.id,
             status="completed",
             message="분석이 완료되었습니다.",
-            news_count=news_count,
-            result_text=result_text
+            news_count=news_count
         )
     
     except ValueError as e:
