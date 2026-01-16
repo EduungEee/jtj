@@ -1598,6 +1598,9 @@ JSON 스키마:
     시장과 종목의 관계를 명시적으로 설명한다.
 """
     
+        # news_content를 news_summary로 사용
+        news_summary = state.get("news_content", "")
+    
         prompt_header = f"""아래는 지난 24시간 동안 수집된 뉴스 기사들이다.
 각 기사는 날짜, 제목, 본문, (존재한다면) 관련 종목 코드/종목명을 포함하고 있다.
 이 뉴스들을 분석하여, 위에서 제시한 JSON 스키마에 정확히 맞는 하나의 JSON 객체를 출력하라.
