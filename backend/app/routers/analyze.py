@@ -37,9 +37,9 @@ class AnalyzeRequest(BaseModel):
         })
     )
     
-    date: Optional[str] = Field(
-        None, 
-        description=f"YYYY-MM-DD 형식의 분석 날짜 (예: {date.today().strftime('%Y-%m-%d')}). 기본값: 오늘"
+    date: str = Field(
+        ...,
+        description=f"YYYY-MM-DD 형식의 분석 날짜 (예: {date.today().strftime('%Y-%m-%d')}). 필수값입니다."
     )
     force: bool = Field(False, description="이미 분석된 날짜도 재분석할지 여부", examples=[False, True])
     
@@ -47,16 +47,15 @@ class AnalyzeRequest(BaseModel):
     @classmethod
     def validate_date(cls, v):
         """날짜 형식 검증"""
-        # None이거나 빈 값인 경우 None 반환
         if v is None:
-            return None
+            raise ValueError("날짜는 필수값입니다. YYYY-MM-DD 형식으로 제공해주세요.")
         if not isinstance(v, str):
             raise ValueError(f"날짜는 문자열이어야 합니다. (받은 타입: {type(v).__name__}, 값: {repr(v)})")
         
-        # 빈 문자열이나 공백만 있는 경우 None 반환
+        # 빈 문자열이나 공백만 있는 경우 에러
         v = v.strip()
         if not v:
-            return None
+            raise ValueError("날짜는 필수값입니다. 빈 문자열은 허용되지 않습니다.")
         
         # 날짜 형식 검증
         try:
@@ -81,32 +80,23 @@ async def analyze_news(
 ):
     """
     벡터 DB에서 뉴스를 조회하고 AI로 분석하여 보고서를 생성합니다.
-    벡터 DB에서 현재 시간~전날 아침 6시 사이의 뉴스 기사를 조회합니다.
+    전날 6시 이후부터 지정된 날짜 23:59:59까지의 뉴스 기사를 조회합니다.
     """
     try:
         # 요청 로깅
         print(f"분석 요청 받음: date={request.date}, force={request.force}")
         
-        # 한국 시간대 설정 (날짜 계산에 사용)
-        seoul_tz = pytz.timezone('Asia/Seoul')
-        now_kst = datetime.now(seoul_tz)
-        
-        # 날짜 파싱
-        # 기본값은 한국 시간 기준 오늘 날짜
-        analysis_date = now_kst.date()
-        if request.date and request.date.strip():  # None이 아니고 빈 문자열도 아님
-            date_str = request.date.strip()
-            try:
-                analysis_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                print(f"날짜 파싱 성공: {analysis_date}")
-            except ValueError as e:
-                print(f"날짜 파싱 실패: '{date_str}' - {e}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식을 사용해주세요. (받은 값: '{date_str}')"
-                )
-        else:
-            print(f"날짜 미지정, 한국 시간 기준 오늘 날짜 사용: {analysis_date}")
+        # 날짜 파싱 (필수값이므로 항상 존재)
+        date_str = request.date.strip()
+        try:
+            analysis_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            print(f"날짜 파싱 성공: {analysis_date}")
+        except ValueError as e:
+            print(f"날짜 파싱 실패: '{date_str}' - {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식을 사용해주세요. (받은 값: '{date_str}')"
+            )
         
         # 이미 분석된 날짜인지 확인
         if not request.force:
@@ -122,17 +112,19 @@ async def analyze_news(
                     news_count=0
                 )
         
-        # 한국 시간대 설정 (뉴스 조회 시간 범위 계산에 사용)
-        # seoul_tz와 now는 위에서 이미 설정됨
-        now = now_kst
+        # 한국 시간대 설정
+        seoul_tz = pytz.timezone('Asia/Seoul')
         
-        # 전날 06:00:00 계산
-        yesterday_6am = (now - timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+        # 분석 대상 날짜의 전날 06:00:00 계산
+        target_date = datetime.combine(analysis_date, datetime.min.time())
+        target_date_kst = seoul_tz.localize(target_date)
+        yesterday_6am = (target_date_kst - timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
         
-        # 현재 시간을 종료 시간으로 설정
-        end_datetime = now
+        # 분석 대상 날짜의 23:59:59를 종료 시간으로 설정
+        end_datetime = target_date_kst.replace(hour=23, minute=59, second=59, microsecond=999999)
         
         print(f"📅 벡터 DB에서 뉴스 조회: {yesterday_6am.strftime('%Y-%m-%d %H:%M:%S')} ~ {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📅 분석 대상 날짜: {analysis_date}")
         
         # 벡터 DB에서 뉴스 조회 및 분석
         report = analyze_news_from_vector_db(

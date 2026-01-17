@@ -25,9 +25,13 @@ async def collect_news_hourly():
     1시간마다 실행되는 뉴스 수집 작업.
     POST /api/get_news API를 호출하여 최신 뉴스를 수집하고 저장합니다.
     """
+    # 한국 시간대 설정
+    seoul_tz = pytz.timezone('Asia/Seoul')
+    now_kst = datetime.now(seoul_tz)
+    
     try:
         print("=" * 60)
-        print(f"📰 뉴스 수집 스케줄러 실행: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📰 뉴스 수집 스케줄러 실행: {now_kst.strftime('%Y-%m-%d %H:%M:%S')} (KST)")
         print("=" * 60)
         
         # API 엔드포인트 호출
@@ -81,9 +85,15 @@ async def run_daily_analysis():
     매일 아침 6시에 실행되는 일일 분석 작업.
     POST /api/analyze API를 호출하여 벡터 DB에서 뉴스를 조회하고 분석합니다.
     """
+    # 한국 시간대 설정
+    seoul_tz = pytz.timezone('Asia/Seoul')
+    now_kst = datetime.now(seoul_tz)
+    today_kst = now_kst.date()
+    
     try:
         print("=" * 60)
-        print(f"📊 일일 분석 스케줄러 실행: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📊 일일 분석 스케줄러 실행: {now_kst.strftime('%Y-%m-%d %H:%M:%S')} (KST)")
+        print(f"📅 분석 대상 날짜: {today_kst.strftime('%Y-%m-%d')}")
         print("=" * 60)
         
         # API 엔드포인트 호출
@@ -92,10 +102,12 @@ async def run_daily_analysis():
         
         # POST 요청 데이터
         request_data = {
-            "force": False  # 이미 분석된 날짜는 재분석하지 않음
+            "force": False,  # 이미 분석된 날짜는 재분석하지 않음
+            "date": today_kst.strftime("%Y-%m-%d")  # 한국 시간 기준 오늘 날짜
         }
         
         print(f"📡 API 호출: POST {analyze_url}")
+        print(f"   요청 데이터: {request_data}")
         
         async with httpx.AsyncClient(timeout=300.0) as client:  # 5분 타임아웃
             response = await client.post(analyze_url, json=request_data)
