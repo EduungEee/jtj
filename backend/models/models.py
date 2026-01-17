@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, DATE, DECIMAL, ForeignKey, Table, Boolean
+from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, DATE, DECIMAL, ForeignKey, Table, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -98,3 +98,19 @@ class User(Base):
     email = Column(String(255), nullable=False)
     subscribed_at = Column(TIMESTAMP, server_default=func.now())
     is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+
+class FinancialStatement(Base):
+    __tablename__ = "financial_statements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stock_code = Column(String(50), nullable=False, index=True)
+    dart_code = Column(String(50), nullable=False)
+    bsns_year = Column(String(4), nullable=False)  # YYYY 형식
+    financial_data = Column(JSONB, nullable=False)  # 재무 데이터
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    
+    # stock_code + bsns_year로 unique 제약
+    __table_args__ = (
+        UniqueConstraint('stock_code', 'bsns_year', name='uq_financial_statement_stock_year'),
+    )

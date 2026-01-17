@@ -14,6 +14,7 @@ if backend_path not in sys.path:
 
 from app.graph.state import ReportGenerationState
 from app.analysis import get_openai_client
+from app.services.dart_api import get_dart_code_from_stock_code
 
 
 def extract_companies(state: ReportGenerationState, config: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -81,8 +82,10 @@ def extract_companies(state: ReportGenerationState, config: Dict[str, Any] = Non
 - 실제 존재하는 한국 주식 시장의 상장 기업만 추천해주세요
 - 각 산업군당 3-10개 정도의 회사를 추천해주세요
 - 뉴스에서 언급된 회사가 있으면 우선적으로 포함해주세요
-- DART 코드는 정확하게 제공해주세요 (없으면 빈 문자열)
-- stock_code는 반드시 6자리 숫자여야 합니다"""
+- stock_code는 반드시 6자리 숫자여야 합니다
+- DART 코드(dart_code)는 정확한 8자리 숫자만 제공해주세요
+- DART 코드를 정확히 모르거나 확신이 없으면 빈 문자열("")로 반환해주세요
+- 추측하거나 임의의 값을 넣지 마세요 (예: 모든 회사에 같은 dart_code를 넣지 마세요)"""
             
             try:
                 response = client.chat.completions.create(
@@ -110,6 +113,23 @@ def extract_companies(state: ReportGenerationState, config: Dict[str, Any] = Non
                     
                     # stock_code가 6자리 숫자인지 확인
                     if stock_code and len(stock_code) == 6 and stock_code.isdigit():
+                        # dart_code 검증 및 보정
+                        # dart_code가 없거나 빈 문자열이거나 8자리가 아닌 경우 매핑 테이블에서 조회
+                        if not dart_code or len(dart_code) != 8 or not dart_code.isdigit():
+                            # 매핑 테이블에서 조회
+                            resolved_dart_code = get_dart_code_from_stock_code(stock_code)
+                            if resolved_dart_code:
+                                # 매핑 테이블에서 찾은 경우 보정
+                                dart_code = resolved_dart_code
+                                print(f"✅ {stock_name} ({stock_code}): dart_code를 매핑 테이블에서 조회하여 보정 ({dart_code})")
+                            else:
+                                # 매핑 테이블에서도 찾을 수 없는 경우
+                                print(f"⚠️  {stock_name} ({stock_code}): dart_code를 찾을 수 없습니다. 빈 문자열로 저장됩니다.")
+                                dart_code = ""
+                        else:
+                            # LLM이 제공한 dart_code가 유효한 경우 그대로 사용
+                            pass
+                        
                         validated_companies.append({
                             "stock_code": stock_code,
                             "stock_name": stock_name,
