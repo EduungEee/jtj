@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ReportListItem } from "@/lib/api/reports";
-import { FiTrendingUp, FiTrendingDown } from "react-icons/fi";
 import { cn } from "@/lib/utils";
+import { FiFileText, FiCalendar, FiBarChart2 } from "react-icons/fi";
 
 interface ReportCardProps {
   report: ReportListItem;
@@ -38,58 +38,97 @@ function formatDate(dateString: string): string {
 }
 
 /**
+ * HTML 태그 제거 (summary에서 <p> 태그 등 제거)
+ */
+function stripHtmlTags(html: string | null): string {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, "").trim();
+}
+
+/**
  * 보고서 카드 컴포넌트
  * 이미지 디자인에 맞춘 스타일
  */
 export function ReportCard({ report }: ReportCardProps) {
-  // 임시 데이터 (나중에 API에서 제공되면 제거)
-  const mockCategory = report.industry_count > 0 ? "산업" : null;
-  const mockTrend = "+1.5%"; // 임시 트렌드 값
-  const mockCompanies = ["삼성전자", "SK하이닉스"]; // 임시 기업 목록
-  const isPositive = mockTrend.startsWith("+");
+  // metadata에서 산업군 정보 추출
+  const industries = report.report_metadata?.industries || [];
+  const industryNames = industries.map((ind) => ind.industry_name).filter(Boolean);
+  
+  // 첫 번째 산업군을 카테고리로 사용 (없으면 기본값)
+  const category = industryNames.length > 0 ? industryNames[0] : (report.industry_count > 0 ? "산업" : null);
 
   return (
     <Link
       href={`/report/${report.id}`}
-      className="block relative p-6 border rounded-lg hover:shadow-lg transition-all bg-white group"
+      className="block relative bg-white border-l-4 border-l-primary rounded-lg shadow-sm hover:shadow-md transition-all group overflow-hidden"
     >
-      {/* 날짜 - 우측 상단 */}
-      <div className="absolute top-4 right-4 text-xs text-muted-foreground">{formatDate(report.analysis_date)}</div>
+      {/* 왼쪽 색상 바 배경 */}
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-primary/60" />
 
-      {/* 카테고리 태그 */}
-      {mockCategory && (
-        <div
-          className={cn("inline-block px-3 py-1 rounded-full text-xs font-medium mb-4", getCategoryColor(mockCategory))}
-        >
-          {mockCategory}
+      <div className="p-6 pl-8">
+        {/* 헤더: 아이콘과 날짜 */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <FiFileText className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <FiCalendar className="w-3 h-3" />
+                <span>{formatDate(report.analysis_date)}</span>
+              </div>
+              {report.industry_count > 0 && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <FiBarChart2 className="w-3 h-3" />
+                  <span>{report.industry_count}개 산업 분석</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* 제목 */}
-      <h3 className="font-bold text-lg mb-3 text-card-foreground">{report.title}</h3>
+        {/* 제목 */}
+        <h3 className="font-bold text-xl mb-3 text-foreground group-hover:text-primary transition-colors line-clamp-2">
+          {report.title}
+        </h3>
 
-      {/* 설명 */}
-      {report.summary && (
-        <p className="text-sm text-muted-foreground mb-4 line-clamp-3 leading-relaxed">{report.summary}</p>
-      )}
+        {/* 설명 */}
+        {report.summary && (
+          <p className="text-sm text-muted-foreground mb-4 line-clamp-3 leading-relaxed">
+            {stripHtmlTags(report.summary)}
+          </p>
+        )}
 
-      {/* 관련 기업들 */}
-      {mockCompanies.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {mockCompanies.map((company, index) => (
-            <span key={index} className="text-xs text-muted-foreground">
-              {company}
-            </span>
-          ))}
+        {/* 산업군 태그들 */}
+        {industryNames.length > 0 && (
+          <div className="flex items-center gap-2 mt-4 pt-4 border-t flex-wrap">
+            {industryNames.slice(0, 3).map((industryName, index) => (
+              <div
+                key={index}
+                className={cn("inline-block px-3 py-1 rounded-md text-xs font-medium", getCategoryColor(industryName))}
+              >
+                {industryName}
+              </div>
+            ))}
+            {industryNames.length > 3 && (
+              <span className="text-xs text-muted-foreground">+{industryNames.length - 3}</span>
+            )}
+          </div>
+        )}
+
+        {/* 읽기 더보기 힌트 */}
+        <div className="mt-4 pt-4 border-t flex items-center gap-2 text-xs text-primary">
+          <span>보고서 보기</span>
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </div>
-      )}
-
-      {/* 트렌드 */}
-      <div
-        className={cn("flex items-center gap-1 text-sm font-semibold", isPositive ? "text-green-600" : "text-red-600")}
-      >
-        {isPositive ? <FiTrendingUp className="w-4 h-4" /> : <FiTrendingDown className="w-4 h-4" />}
-        <span>{mockTrend}</span>
       </div>
     </Link>
   );

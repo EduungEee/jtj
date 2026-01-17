@@ -80,6 +80,13 @@ export interface ReportListItem {
   created_at: string;
   news_count: number;
   industry_count: number;
+  report_metadata?: {
+    industries?: Array<{
+      industry_name: string;
+      impact_level?: string;
+      trend_direction?: string;
+    }>;
+  } | null;
 }
 
 /**

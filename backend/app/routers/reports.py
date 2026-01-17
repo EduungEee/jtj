@@ -97,6 +97,7 @@ class ReportListItemResponse(BaseModel):
     created_at: datetime
     news_count: int = 0
     industry_count: int = 0
+    report_metadata: Optional[dict] = None
     
     class Config:
         from_attributes = True
@@ -180,7 +181,8 @@ async def get_all_reports(
             analysis_date=report.analysis_date,
             created_at=report.created_at,
             news_count=news_count,
-            industry_count=industry_count
+            industry_count=industry_count,
+            report_metadata=report.report_metadata
         ))
     
     return result
@@ -217,7 +219,8 @@ async def get_today_reports(
             analysis_date=report.analysis_date,
             created_at=report.created_at,
             news_count=news_count,
-            industry_count=industry_count
+            industry_count=industry_count,
+            report_metadata=report.report_metadata
         ))
     
     return result

@@ -6,6 +6,7 @@ import { Navbar } from "@/components/navbar";
 import { ImpactedIndustriesGrid } from "@/components/impacted-industries-grid";
 import { ReportCTASection } from "@/components/report-cta-section";
 import { ShareButton } from "@/components/share-button";
+import { FiBarChart } from "react-icons/fi";
 
 interface ReportPageProps {
   params: Promise<{ id: string }>;
@@ -118,28 +119,15 @@ export default async function ReportPage({ params }: ReportPageProps) {
               </section>
 
               {/* 메인 콘텐츠 섹션 */}
-              <section className="py-8 relative">
+              <section className="relative">
                 <div className="max-w-6xl mx-auto">
                   {/* 사회적 파급효과 분석 */}
                   {report.industries.length > 0 && (
                     <div className="mb-8">
                       {/* 제목 - 항상 선명하게 표시 */}
                       <div className="flex items-center gap-2 mb-6">
-                        <svg
-                          className="w-5 h-5 text-primary"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                          />
-                        </svg>
-                        <h2 className="text-xl font-semibold text-foreground">사회적 파급효과 분석</h2>
+                        <FiBarChart className="w-5 h-5 text-primary" />
+                        <h2 className="text-xl font-semibold text-foreground">산업별 영향 분석</h2>
                       </div>
                       {/* 콘텐츠 */}
                       <div className="relative">

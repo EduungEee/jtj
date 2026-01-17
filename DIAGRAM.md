@@ -246,19 +246,20 @@ erDiagram
         text summary
         date analysis_date
         timestamp created_at
+        jsonb report_metadata "report_data 저장용"
     }
 
     NEWS_ARTICLES {
         int id PK
         string title
-        text meta_description
         text content
         string source
         string url
         timestamp published_at
         timestamp collected_at
-        vector embedding "pgvector"
-        jsonb metadata "날짜, 원문 링크 등"
+        string provider "뉴스 API 제공자"
+        jsonb article_metadata "벡터 DB metadata"
+        vector embedding "pgvector vector(1536)"
     }
 
     REPORT_NEWS {
@@ -270,9 +271,10 @@ erDiagram
         int id PK
         int report_id FK
         string industry_name
-        string impact_level
+        string impact_level "high, medium, low"
         text impact_description
-        string trend_direction
+        string trend_direction "positive, negative, neutral"
+        text selection_reason "산업 선별 이유"
         timestamp created_at
     }
 
@@ -282,43 +284,30 @@ erDiagram
         int industry_id FK
         string stock_code
         string stock_name
-        string expected_trend
-        decimal confidence_score
+        string expected_trend "up, down, neutral"
+        decimal confidence_score "0.00 ~ 1.00"
         text reasoning
+        decimal health_factor "0.00 ~ 1.00"
+        string dart_code "DART API용 코드"
         timestamp created_at
     }
-```
 
-## 🎨 Frontend 컴포넌트 구조
+    EMAIL_SUBSCRIPTIONS {
+        int id PK
+        string clerk_user_id UK "Clerk 사용자 ID"
+        string email
+        timestamp subscribed_at
+        boolean is_active
+    }
 
-```mermaid
-graph TD
-    subgraph "Pages"
-        HomePage[/ - 홈페이지]
-        ReportPage[/report/:id - 보고서 상세]
-    end
-
-    subgraph "Components"
-        HeroSection[HeroSection<br/>Hero 섹션]
-        TodayReports[TodayReports<br/>오늘의 보고서 목록]
-        ReportCard[ReportCard<br/>보고서 카드]
-        NewsList[NewsList<br/>뉴스 기사 리스트]
-        IndustrySection[IndustrySection<br/>산업별 분석]
-        StockCard[StockCard<br/>주식 카드]
-    end
-
-    subgraph "API Layer"
-        ReportsAPI[lib/api/reports.ts<br/>- getTodayReports<br/>- getReport]
-    end
-
-    HomePage --> HeroSection
-    HomePage --> TodayReports
-    TodayReports --> ReportCard
-    ReportPage --> NewsList
-    ReportPage --> IndustrySection
-    IndustrySection --> StockCard
-    TodayReports --> ReportsAPI
-    ReportPage --> ReportsAPI
+    FINANCIAL_STATEMENTS {
+        int id PK
+        string stock_code
+        string dart_code
+        string bsns_year "YYYY 형식"
+        jsonb financial_data "재무 데이터"
+        timestamp created_at
+    }
 ```
 
 ## 🔧 기술 스택 상세
@@ -393,132 +382,6 @@ graph TB
     Docker --> Adminer
 ```
 
-## 📋 주요 기능 플로우
-
-### 자동 뉴스 수집 프로세스 (매시간)
-
-```mermaid
-flowchart TD
-    Start([스케줄러: 매시간<br/>POST /api/get_news]) --> Orchestrate[Orchestration 설정]
-    Orchestrate --> Split[쿼리 분리 및 OR 변환]
-    Split --> LoopProviders{모든 Provider 시도?}
-    
-    LoopProviders -->|아니오| Fetch[API 호출 (Provider별 최대 수량)]
-    Fetch --> Collect[결과 수집]
-    Collect --> LoopProviders
-    
-    LoopProviders -->|예| Dedupe[URL 기반 중복 제거]
-    Dedupe --> SaveNews[관계형 DB 저장]
-    SaveNews --> Embedding[벡터 임베딩 생성]
-    Embedding --> SaveVector[pgvector에 저장]
-    SaveVector --> Success1[수집 완료]
-    
-    Success1 --> End([종료])
-```
-
-### 자동 일일 분석 프로세스 (매일 아침 6시)
-
-```mermaid
-flowchart TD
-    Start([스케줄러: 매일 6시<br/>POST /api/analyze]) --> Query[벡터 DB에서<br/>전날 6시~현재 뉴스 조회]
-    Query --> Check{뉴스 존재?}
-    
-    Check -->|없음| NoNews[뉴스 없음 로깅]
-    Check -->|있음| Aggregate[뉴스 취합]
-    
-    Aggregate --> Analyze[AI 분석]
-    Analyze --> OpenAI[OpenAI API 호출<br/>LLM 보고서 작성]
-    OpenAI -->|성공| Parse[결과 파싱]
-    OpenAI -->|실패| Error1[에러 로깅]
-    
-    Parse --> SaveReport[보고서 저장]
-    SaveReport --> SaveIndustries[산업 분석 저장]
-    SaveIndustries --> SaveStocks[주식 분석 저장]
-    SaveStocks --> Success[분석 완료]
-    
-    NoNews --> End([종료])
-    Error1 --> End
-    Success --> End
-```
-
-### 수동 분석 프로세스 (선택사항)
-
-```mermaid
-flowchart TD
-    Start([사용자 요청]) --> Validate{날짜 검증}
-    Validate -->|유효하지 않음| Error1[에러 반환]
-    Validate -->|유효함| Check{이미 분석됨?}
-
-    Check -->|예, force=false| Return[기존 보고서 반환]
-    Check -->|아니오 또는 force=true| Query[지정 기간 뉴스 조회]
-
-    Query --> Aggregate[뉴스 취합]
-    Aggregate --> Analyze[AI 분석]
-    Analyze --> OpenAI[OpenAI API 호출]
-    OpenAI -->|성공| Parse[결과 파싱]
-    OpenAI -->|실패| Error2[에러 반환]
-
-    Parse --> SaveReport[보고서 저장]
-    SaveReport --> SaveIndustries[산업 분석 저장]
-    SaveIndustries --> SaveStocks[주식 분석 저장]
-    SaveStocks --> Success[성공 응답]
-
-    Error1 --> End([종료])
-    Error2 --> End
-    Return --> End
-    Success --> End
-```
-
-### 보고서 조회 프로세스
-
-```mermaid
-flowchart TD
-    Start([사용자 요청]) --> Route{라우트 확인}
-
-    Route -->|/| Home[홈페이지]
-    Route -->|/report/:id| Detail[상세 페이지]
-
-    Home --> FetchToday[오늘의 보고서 조회]
-    FetchToday --> Query1[DB 쿼리: analysis_date = today]
-    Query1 --> Join1[관계 조인: news_count, industry_count]
-    Join1 --> ReturnList[목록 반환]
-    ReturnList --> RenderCards[카드 렌더링]
-
-    Detail --> FetchDetail[보고서 상세 조회]
-    FetchDetail --> Query2[DB 쿼리: report_id]
-    Query2 --> Join2[관계 조인: news, industries, stocks]
-    Join2 --> ReturnDetail[상세 데이터 반환]
-    ReturnDetail --> RenderDetail[상세 페이지 렌더링]
-
-    RenderCards --> End([종료])
-    RenderDetail --> End
-```
-
-### 이메일 전송 프로세스 (매일 아침 7시)
-
-```mermaid
-flowchart TD
-    Start([스케줄러: 매일 7시<br/>POST /api/send-email]) --> GetReport[오늘 생성된 보고서 조회]
-    GetReport --> GetSubscribers[구독자 이메일 목록 조회]
-    GetSubscribers --> Check{보고서 및 구독자 존재?}
-    
-    Check -->|없음| NoData[데이터 없음 로깅]
-    Check -->|있음| Loop[각 구독자에게 반복]
-    
-    Loop --> CreateEmail[이메일 생성<br/>보고서 링크 포함]
-    CreateEmail --> SendEmail[이메일 API 호출<br/>SendGrid/Resend]
-    SendEmail -->|성공| Next[다음 구독자]
-    SendEmail -->|실패| Error1[에러 로깅]
-    
-    Next --> CheckLoop{더 많은 구독자?}
-    CheckLoop -->|예| Loop
-    CheckLoop -->|아니오| Success[전송 완료]
-    
-    NoData --> End([종료])
-    Error1 --> End
-    Success --> End
-```
-
 ## 🌐 네트워크 아키텍처
 
 ```mermaid
@@ -555,88 +418,186 @@ graph TB
     FastAPI <-->|HTTPS| EmailAPI
 ```
 
-## 📦 컴포넌트 의존성
+## 🔄 LangGraph 보고서 생성 플로우
 
-```mermaid
-graph LR
-    subgraph "Frontend Dependencies"
-        NextJS --> React
-        NextJS --> Tailwind
-        NextJS --> TypeScript
-        React --> Shadcn
-        Tailwind --> PostCSS
-    end
-
-    subgraph "Backend Dependencies"
-        FastAPI --> SQLAlchemy
-        FastAPI --> Pydantic
-        FastAPI --> Requests
-        FastAPI --> APScheduler
-        SQLAlchemy --> PostgreSQL
-        PostgreSQL --> pgvector
-        Requests --> OpenAI
-        Requests --> NewsDataAPI
-    end
-```
-
-## 🚀 배포 아키텍처 (현재: 로컬 개발)
+### Graph Node 전체 흐름
 
 ```mermaid
 graph TB
-    subgraph "Local Development"
-        Docker[Docker Compose]
-        Docker --> Frontend[Frontend Container]
-        Docker --> Backend[Backend Container]
-        Docker --> DB[PostgreSQL Container]
-        Docker --> Admin[Adminer Container]
-    end
-
-    subgraph "External APIs"
-        Naver[네이버 뉴스 API]
-        OpenAI[OpenAI API]
-        Email[이메일 API<br/>SendGrid/Resend]
-    end
-
-    Backend --> NewsData
-    Backend --> OpenAI
-    Backend --> Email
-    Backend --> DB
-    Frontend --> Backend
-    Admin --> DB
+    Start([분석 시작<br/>analysis_date, current_time]) --> FilterNews[filter_news_by_date<br/>날짜 범위 필터링]
+    
+    FilterNews -->|filtered_news| SelectNews[select_relevant_news<br/>뉴스 선별 및 점수화]
+    
+    SelectNews -->|selected_news<br/>news_scores<br/>selection_reasons| PredictIndustries[predict_industries<br/>산업군 예측]
+    
+    PredictIndustries -->|predicted_industries<br/>related_news_ids| ExtractCompanies[extract_companies<br/>회사 추출]
+    
+    ExtractCompanies -->|companies_by_industry<br/>stock_code, dart_code| FetchFinancials[fetch_financial_data<br/>재무 데이터 조회]
+    
+    FetchFinancials -->|financial_data| CalculateHealth[calculate_health_factor<br/>Health Factor 계산]
+    
+    CalculateHealth -->|health_factors| GenerateReport[generate_report<br/>보고서 생성]
+    
+    GenerateReport -->|report_data| End([완료])
+    
+    style FilterNews fill:#e1f5ff
+    style SelectNews fill:#e1f5ff
+    style PredictIndustries fill:#e1f5ff
+    style ExtractCompanies fill:#e1f5ff
+    style FetchFinancials fill:#e1f5ff
+    style CalculateHealth fill:#e1f5ff
+    style GenerateReport fill:#e1f5ff
 ```
 
----
+### 각 노드의 상세 로직
 
-## 📝 다이어그램 설명
+#### 1. filter_news_by_date
+```mermaid
+flowchart TD
+    Start([시작]) --> GetDate[analysis_date, current_time 가져오기]
+    GetDate --> CalcRange[날짜 범위 계산<br/>전날 06:00 ~ 당일 23:59]
+    CalcRange --> QueryDB[DB에서 뉴스 조회<br/>get_news_by_date_range]
+    QueryDB --> Return[filtered_news 반환]
+    Return --> End([종료])
+```
 
-### 시스템 아키텍처
+#### 2. select_relevant_news
+```mermaid
+flowchart TD
+    Start([시작]) --> GetNews[filtered_news 가져오기]
+    GetNews --> CreateQuery[쿼리 임베딩 생성<br/>주식 영향도 높은 뉴스]
+    CreateQuery --> SemanticSearch[Semantic Search<br/>벡터 유사도 검색]
+    SemanticSearch --> LLMScore[LLM으로 점수화<br/>주식 영향도 평가]
+    LLMScore --> SelectTop[상위 20개 선별]
+    SelectTop --> Return[selected_news<br/>news_scores<br/>selection_reasons 반환]
+    Return --> End([종료])
+```
 
-- 전체 시스템의 레이어 구조를 보여줍니다
-- 클라이언트부터 데이터베이스까지의 흐름을 표현합니다
+#### 3. predict_industries
+```mermaid
+flowchart TD
+    Start([시작]) --> GetNews[selected_news 가져오기]
+    GetNews --> LLMPredict[LLM으로 산업군 예측<br/>뉴스 분석하여 유망 산업 추출]
+    LLMPredict --> MapNews[각 산업에 관련 뉴스 ID 매핑<br/>related_news_ids]
+    MapNews --> Return[predicted_industries 반환<br/>industry_name, selection_reason, related_news_ids]
+    Return --> End([종료])
+```
 
-### 데이터 흐름도
+#### 4. extract_companies
+```mermaid
+flowchart TD
+    Start([시작]) --> GetIndustries[predicted_industries 가져오기]
+    GetIndustries --> LoopIndustry{각 산업별 반복}
+    LoopIndustry --> LLMExtract[LLM으로 회사 추출<br/>산업별 주요 회사 목록]
+    LLMExtract --> Validate[데이터 검증<br/>stock_code 6자리 확인]
+    Validate --> CheckDartCode{dart_code 유효?}
+    CheckDartCode -->|아니오| MapDartCode[매핑 테이블에서<br/>dart_code 조회<br/>corpCode.xml]
+    CheckDartCode -->|예| AddCompany[회사 추가]
+    MapDartCode --> AddCompany
+    AddCompany --> LoopIndustry
+    LoopIndustry -->|완료| Return[companies_by_industry 반환<br/>stock_code, stock_name, dart_code, reasoning]
+    Return --> End([종료])
+```
 
-- 시퀀스 다이어그램으로 요청-응답 플로우를 시각화합니다
-- 자동 뉴스 수집, 일일 분석, 이메일 전송, 보고서 조회의 주요 플로우를 다룹니다
+#### 5. fetch_financial_data
+```mermaid
+flowchart TD
+    Start([시작]) --> GetCompanies[companies_by_industry 가져오기]
+    GetCompanies --> LoopCompany{각 회사별 반복}
+    LoopCompany --> CheckDB{DB에 재무 데이터<br/>존재?}
+    CheckDB -->|예| GetFromDB[DB에서 조회<br/>stock_code, dart_code, bsns_year]
+    CheckDB -->|아니오| CallDART[DART API 호출<br/>get_financial_statements_by_year]
+    CallDART --> SaveDB[DB에 저장<br/>save_financial_to_db]
+    GetFromDB --> AddFinancials[financial_data에 추가]
+    SaveDB --> AddFinancials
+    AddFinancials --> LoopCompany
+    LoopCompany -->|완료| Return[financial_data 반환<br/>재무 지표: revenue, operating_profit, net_income 등]
+    Return --> End([종료])
+```
 
-### API 엔드포인트 구조
+#### 6. calculate_health_factor
+```mermaid
+flowchart TD
+    Start([시작]) --> GetFinancials[financial_data 가져오기]
+    GetFinancials --> LoopCompany{각 회사별 반복}
+    LoopCompany --> CalcRevenueGrowth[매출 성장률 점수<br/>가중치: 0.3]
+    CalcRevenueGrowth --> CalcProfitability[수익성 점수<br/>영업이익률, 가중치: 0.3]
+    CalcProfitability --> CalcStability[안정성 점수<br/>부채비율, 유동비율, 가중치: 0.2]
+    CalcStability --> CalcTrend[수익성 추세 점수<br/>영업이익 성장률, 가중치: 0.2]
+    CalcTrend --> WeightedAvg[가중 평균 계산<br/>health_factor = 0-1]
+    WeightedAvg --> AddHealth[health_factors에 추가]
+    AddHealth --> LoopCompany
+    LoopCompany -->|완료| Return[health_factors 반환<br/>health_factor, calculation_details]
+    Return --> End([종료])
+```
 
-- FastAPI 서버의 주요 엔드포인트와 요청/응답 형식을 보여줍니다
+#### 7. generate_report
+```mermaid
+flowchart TD
+    Start([시작]) --> GetData[모든 데이터 가져오기<br/>selected_news, predicted_industries<br/>companies_by_industry, health_factors]
+    GetData --> LLMGenerate[LLM으로 보고서 생성<br/>summary, industries, companies]
+    LLMGenerate --> MergeData[실제 데이터와 병합<br/>related_news, companies 보강]
+    MergeData --> CheckCompanies{LLM companies<br/>매칭 성공?}
+    CheckCompanies -->|아니오| FallbackCompanies[companies_by_industry<br/>실제 회사 목록 사용]
+    CheckCompanies -->|예| UseLLMCompanies[LLM 생성 회사 사용]
+    FallbackCompanies --> BuildReport[report_data 구성]
+    UseLLMCompanies --> BuildReport
+    BuildReport --> Return[report_data 반환<br/>summary, industries, companies]
+    Return --> End([종료])
+```
 
-### 데이터베이스 스키마
+### State 데이터 흐름
 
-- ER 다이어그램으로 테이블 간 관계를 표현합니다
-- 외래키와 관계를 명확히 표시합니다
+```mermaid
+graph LR
+    subgraph "입력"
+        Input1[analysis_date]
+        Input2[current_time]
+    end
+    
+    subgraph "중간 상태"
+        State1[filtered_news<br/>List NewsArticle]
+        State2[selected_news<br/>List NewsArticle]
+        State3[news_scores<br/>Dict int:float]
+        State4[selection_reasons<br/>Dict int:str]
+        State5[predicted_industries<br/>List Dict]
+        State6[companies_by_industry<br/>Dict str:List Dict]
+        State7[financial_data<br/>Dict str:Dict]
+        State8[health_factors<br/>Dict str:Dict]
+    end
+    
+    subgraph "최종 결과"
+        Output1[report_data<br/>Dict]
+        Output2[report_id<br/>Optional int]
+    end
+    
+    Input1 --> State1
+    Input2 --> State1
+    State1 --> State2
+    State2 --> State3
+    State2 --> State4
+    State2 --> State5
+    State5 --> State6
+    State6 --> State7
+    State7 --> State8
+    State2 --> Output1
+    State5 --> Output1
+    State6 --> Output1
+    State8 --> Output1
+    Output1 --> Output2
+```
 
-### Frontend 컴포넌트 구조
+### 노드별 주요 기능 및 데이터 변환
 
-- Next.js 페이지와 컴포넌트의 계층 구조를 보여줍니다
-- 컴포넌트 간 의존성을 표현합니다
-
-### 주요 기능 플로우
-
-- 플로우차트로 비즈니스 로직의 실행 순서를 표현합니다
-- 조건 분기와 에러 처리를 포함합니다
+| 노드 | 입력 | 출력 | 주요 기능 |
+|------|------|------|----------|
+| filter_news_by_date | analysis_date, current_time | filtered_news | 날짜 범위로 뉴스 필터링 (전날 6시 ~ 당일 23:59) |
+| select_relevant_news | filtered_news | selected_news, news_scores, selection_reasons | Semantic Search + LLM으로 주식 영향도 높은 뉴스 선별 |
+| predict_industries | selected_news | predicted_industries | LLM으로 뉴스 분석하여 유망 산업군 예측 |
+| extract_companies | predicted_industries, selected_news | companies_by_industry | LLM으로 산업별 회사 추출 + dart_code 매핑 |
+| fetch_financial_data | companies_by_industry | financial_data | DB 또는 DART API로 재무 데이터 조회 |
+| calculate_health_factor | financial_data, companies_by_industry | health_factors | 재무 지표 기반 Health Factor 계산 |
+| generate_report | selected_news, predicted_industries, companies_by_industry, health_factors | report_data | LLM으로 최종 보고서 생성 및 데이터 병합 |
 
 ---
 
