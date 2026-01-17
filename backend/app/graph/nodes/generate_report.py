@@ -56,13 +56,26 @@ def generate_report(state: ReportGenerationState, config: Dict[str, Any] = None)
         
         news_summary = "\n".join(news_items)
         
-        # 산업군 정보 요약
+        # 산업군 정보 요약 (related_news_ids 포함)
         industry_summary = []
+        industry_news_map = {}  # 산업별 뉴스 정보 저장
         for industry in predicted_industries:
             industry_name = industry.get("industry_name", "")
             selection_reason = industry.get("selection_reason", "")
             companies = companies_by_industry.get(industry_name, [])
-            industry_summary.append(f"- {industry_name}: {len(companies)}개 회사, 선별 이유: {selection_reason}")
+            related_news_ids = industry.get("related_news_ids", [])
+            
+            # 산업별 관련 뉴스 정보 수집
+            related_news_info = []
+            for news_id in related_news_ids:
+                news = next((n for n in selected_news if n.id == news_id), None)
+                if news:
+                    content_preview = news.content[:200] if news.content else "내용 없음"
+                    related_news_info.append(f"  - [ID: {news_id}] {news.title}\n    내용: {content_preview}")
+            
+            industry_news_map[industry_name] = related_news_info
+            news_list_text = "\n".join(related_news_info) if related_news_info else "  (관련 뉴스 없음)"
+            industry_summary.append(f"- {industry_name}: {len(companies)}개 회사, {len(related_news_ids)}개 관련 뉴스, 선별 이유: {selection_reason}\n{news_list_text}")
         
         industry_text = "\n".join(industry_summary)
         
@@ -84,13 +97,10 @@ def generate_report(state: ReportGenerationState, config: Dict[str, Any] = None)
       "impact_description": "영향 설명",
       "trend_direction": "positive|negative|neutral",
       "selection_reason": "산업 선별 이유",
-      "related_news": [
+      "news_impacts": [
         {{
           "news_id": int,
-          "title": "뉴스 제목",
-          "url": "뉴스 URL",
-          "published_at": "발행일",
-          "impact_on_industry": "이 뉴스가 해당 산업에 미치는 영향 설명"
+          "impact_on_industry": "이 뉴스가 해당 산업에 미치는 영향 설명 (100-200자)"
         }}
       ],
       "companies": [
@@ -109,7 +119,8 @@ def generate_report(state: ReportGenerationState, config: Dict[str, Any] = None)
 주의사항:
 - summary는 반드시 <p> 태그로 문단을 분리해주세요
 - summary는 500-800자 범위로 작성해주세요
-- 각 산업의 related_news는 실제 선별된 뉴스 중에서만 선택해주세요
+- 각 산업의 news_impacts는 위에 나열된 관련 뉴스 ID들에 대해서만 작성해주세요
+- news_id는 반드시 위에 나열된 뉴스 ID와 일치해야 합니다
 - 각 회사의 health_factor는 제공된 값을 사용해주세요"""
         
         response = client.chat.completions.create(
@@ -145,19 +156,23 @@ def generate_report(state: ReportGenerationState, config: Dict[str, Any] = None)
             if not actual_industry:
                 continue
             
-            # 관련 뉴스 데이터 보강
+            # 관련 뉴스 데이터 보강 (related_news_ids를 기반으로 직접 구성)
             related_news = []
             related_news_ids = actual_industry.get("related_news_ids", [])
             
+            # LLM이 생성한 news_impacts에서 impact_on_industry 매핑 생성
+            news_impacts_map = {}
+            for news_impact in industry_data.get("news_impacts", []):
+                news_id = news_impact.get("news_id")
+                if news_id:
+                    news_impacts_map[news_id] = news_impact.get("impact_on_industry", "")
+            
+            # related_news_ids를 기반으로 실제 뉴스 데이터로 구성
             for news_id in related_news_ids:
                 news = next((n for n in selected_news if n.id == news_id), None)
                 if news:
-                    # LLM이 생성한 impact_on_industry 찾기
-                    impact_desc = ""
-                    for rn in industry_data.get("related_news", []):
-                        if rn.get("news_id") == news_id:
-                            impact_desc = rn.get("impact_on_industry", "")
-                            break
+                    # LLM이 생성한 impact_on_industry 가져오기 (없으면 기본값)
+                    impact_desc = news_impacts_map.get(news_id, f"{news.title}이(가) {industry_name} 산업에 영향을 미칩니다.")
                     
                     related_news.append({
                         "news_id": news.id,

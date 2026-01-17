@@ -6,7 +6,6 @@ import { Navbar } from "@/components/navbar";
 import { ImpactedIndustriesGrid } from "@/components/impacted-industries-grid";
 import { ReportCTASection } from "@/components/report-cta-section";
 import { ShareButton } from "@/components/share-button";
-import { FiExternalLink } from "react-icons/fi";
 
 interface ReportPageProps {
   params: Promise<{ id: string }>;
@@ -113,32 +112,6 @@ export default async function ReportPage({ params }: ReportPageProps) {
                           })(),
                         }}
                       />
-                    </div>
-                  )}
-
-                  {/* 참고 뉴스 링크 */}
-                  {report.news_articles.length > 0 && (
-                    <div className="mb-8">
-                      <p className="text-xs text-muted-foreground mb-3">참고 뉴스:</p>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {report.news_articles.map((article) => (
-                          <div key={article.id} className="min-w-0">
-                            {article.url ? (
-                              <a
-                                href={article.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-primary/80 hover:text-primary hover:underline inline-flex items-center gap-1 w-full"
-                              >
-                                <span className="truncate">{article.title}</span>
-                                <FiExternalLink className="w-3 h-3 shrink-0" />
-                              </a>
-                            ) : (
-                              <span className="text-xs text-primary/70 truncate block">{article.title}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
                     </div>
                   )}
                 </div>
