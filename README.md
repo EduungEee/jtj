@@ -12,6 +12,7 @@
   - **Orchestration**: 각 API의 사양에 따른 쿼리 변환 (OR 연산자 지원 등) 및 모든 Provider에서 최대 개수 수집 (Max Collection)
   - **Provider 아키텍처**: 각 Provider 클래스에 fetch 로직 통합, 공통 헬퍼 함수로 중복 제거
   - title, description 데이터 추출 및 pgvector/PostgreSQL 저장
+  - **데이터 관리**: 매일 새벽 4시 오래된 뉴스(30일 경과) 자동 삭제로 DB 최적화 유지
 - 🤖 **자동 보고서 생성**: 매일 아침 6시에 보고서 생성
   - 보고서 생성 시점으로부터 24시간 전의 뉴스 기사들을 활용
   - LLM을 사용하여 주식 동향 예측 분석
@@ -46,7 +47,7 @@ npm run dev
 
 # 4. 접속
 # Frontend: http://localhost:3000
-# Backend API (Swagger): http://localhost:8000/docs
+# Backend API (Swagger): http://localhost:8000/docs (ID / PW)
 # 데이터베이스 관리: http://localhost:8081 (PgWeb)
 
 # docker-compose 재빌드
@@ -63,6 +64,10 @@ docker-compose build --no-cache
   - 모든 Provider에서 최대 개수 수집 (Max Collection 전략)
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB에는 날짜, 원문 링크 등 metadata 포함)
   - 1시간 마다 크론잡으로 트리거됨
+- `DELETE /api/news/old` - 오래된 뉴스 삭제 엔드포인트
+  - 30일(기본값) 이상 지난 뉴스 기사 삭제
+  - 관계형 DB 및 벡터 DB 모두 정리
+  - 새벽 4시에 크론잡으로 트리거됨
 - `GET /api/news` - 저장된 뉴스 조회 엔드포인트
   - DB에 저장된 뉴스 기사 목록 조회
   - 필터링 옵션 (날짜, 키워드 등)
@@ -92,6 +97,8 @@ docker-compose build --no-cache
   - 멀티 API Provider Orchestration을 통한 뉴스 수집
   - 쿼리 변환 및 모든 Provider에서 최대 개수 수집 (Max Collection)
   - 관계형 DB와 벡터 DB에 저장 (벡터 DB metadata: 날짜, 원문 링크 리스트)
+- **오래된 뉴스 삭제**: 매일 새벽 4시 자동 실행 (`DELETE /api/news/old` 호출)
+  - 30일 이상 지난 뉴스 기사 및 벡터 데이터 삭제로 스토리지 관리
 - **보고서 생성**: 매일 아침 6시 자동 실행 (`POST /api/analyze` 호출)
   - 벡터 DB에서 전날 아침 6시~현재 시간 사이의 뉴스 기사 조회
   - 조회된 뉴스 기사들을 LLM에 전달하여 주식 동향 예측 보고서 작성
@@ -116,6 +123,10 @@ SENDGRID_API_KEY=your_sendgrid_api_key
 # 또는
 RESEND_API_KEY=your_resend_api_key
 FRONTEND_URL=http://localhost:3000
+
+# Swagger UI Security
+SWAGGER_USER=id
+SWAGGER_PASSWORD=password
 ```
 
 ---

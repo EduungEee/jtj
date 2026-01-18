@@ -40,6 +40,7 @@ graph TB
     subgraph "Scheduler Layer"
         Scheduler[스케줄러<br/>APScheduler]
         NewsScheduler[뉴스 수집<br/>매시간]
+        CleanupScheduler[뉴스 삭제<br/>매일 4시]
         AnalysisScheduler[일일 분석<br/>매일 6시]
         EmailScheduler[이메일 전송<br/>매일 7시]
     end
@@ -64,9 +65,11 @@ graph TB
     Services -->|데이터 저장/조회| PostgreSQL
     Adminer -->|관리| PostgreSQL
     Scheduler --> NewsScheduler
+    Scheduler --> CleanupScheduler
     Scheduler --> AnalysisScheduler
     Scheduler --> EmailScheduler
     NewsScheduler -->|POST /api/get_news| FastAPI
+    CleanupScheduler -->|DELETE /api/news/old| FastAPI
     AnalysisScheduler -->|POST /api/analyze| FastAPI
     EmailScheduler -->|POST /api/send-email| FastAPI
     Services -->|이메일 전송| EmailAPI
@@ -206,6 +209,7 @@ graph TB
         subgraph "뉴스 API"
             GetNews[POST /api/get_news<br/>뉴스 수집]
             NewsList[GET /api/news<br/>뉴스 조회]
+            DeleteOld[DELETE /api/news/old<br/>뉴스 삭제]
         end
         
         subgraph "보고서 API"
@@ -223,6 +227,7 @@ graph TB
     GetNews -->|멀티 API Orchestration| ExternalAPIs[NewsData, Naver, NewsAPI.org, TheNewsAPI]
     GetNews -->|저장| DB1[(PostgreSQL<br/>+ pgvector)]
     NewsList -->|조회| DB1
+    DeleteOld -->|삭제| DB1
     Analyze -->|벡터 DB 조회| DB1
     Analyze -->|분석| OpenAI[OpenAI API]
     Analyze -->|저장| DB2[(PostgreSQL)]
