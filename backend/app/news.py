@@ -8,7 +8,7 @@ import sys
 import math
 import traceback
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import requests
@@ -1075,3 +1075,41 @@ def collect_news(db: Session, query: str = "주식", size: int = 10) -> List[New
         print(f"⚠️  뉴스 수집 중 예상치 못한 오류: {e}")
         print(f"Traceback: {traceback.format_exc()}")
         raise ValueError(f"뉴스 수집 실패: {str(e)}")
+
+
+def delete_old_news(db: Session, days: int = 30) -> int:
+    """
+    오래된 뉴스 기사를 삭제합니다.
+    
+    Args:
+        db: 데이터베이스 세션
+        days: 삭제할 기준일 (오늘로부터 days일 이전의 기사 삭제)
+        
+    Returns:
+        삭제된 기사 개수
+    """
+    if days < 0:
+        raise ValueError("days는 0 이상의 정수여야 합니다.")
+        
+    try:
+        cutoff_date = datetime.now() - timedelta(days=days)
+        print(f"🗑️ 뉴스 삭제 시작: {days}일 이상 지난 기사 (기준일: {cutoff_date})")
+        
+        # 삭제할 기사 수 조회 (로깅용)
+        count = db.query(NewsArticle).filter(NewsArticle.published_at < cutoff_date).count()
+        
+        if count > 0:
+            # 일괄 삭제 execution
+            db.query(NewsArticle).filter(NewsArticle.published_at < cutoff_date).delete(synchronize_session=False)
+            db.commit()
+            print(f"✅ {count}개의 오래된 뉴스 기사가 삭제되었습니다.")
+        else:
+            print("ℹ️ 삭제할 오래된 뉴스 기사가 없습니다.")
+            
+        return count
+        
+    except Exception as e:
+        db.rollback()
+        print(f"⚠️  뉴스 삭제 중 오류 발생: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise
