@@ -101,6 +101,7 @@
   - [x] APScheduler 설치 및 설정
   - [x] FastAPI 앱 시작 시 스케줄러 초기화
   - [x] 비동기 작업 스케줄링 (AsyncIOScheduler)
+  - [x] 오래된 뉴스 자동 삭제 스케줄러 추가 (매일 04:00, 30일 경과 뉴스 삭제)
 
 **체크포인트**: 자동 뉴스 수집 및 Vector DB 저장 동작
 
@@ -216,6 +217,9 @@
   - [ ] 비회원용 흐림 처리 및 가입 유도 UI 구현
   - [ ] 회원탈퇴 처리 로직 (Clerk webhook 또는 직접 처리)
   - [ ] 이메일 변경 verification 확인
+- [x] API 문서 보안 적용
+  - [x] Swagger UI (`/docs`, `/openapi.json`) Basic Auth 적용
+  - [x] `/redoc` 엔드포인트 비활성화
 
 **체크포인트**: 데모 가능한 상태
 
@@ -370,6 +374,10 @@ CREATE TABLE email_subscriptions (
 - `GET /api/news` - 저장된 뉴스 조회 엔드포인트
   - DB에 저장된 뉴스 기사 목록 조회
   - 필터링 옵션 (날짜, 키워드 등)
+- `DELETE /api/news/old` - 오래된 뉴스 삭제 엔드포인트
+  - 30일(기본값) 이상 지난 뉴스 기사 삭제
+  - 관계형 DB 및 벡터 DB 모두 정리
+  - 새벽 4시에 크론잡으로 트리거됨
 
 ### 보고서 관련
 
@@ -458,6 +466,10 @@ FRONTEND_URL=http://localhost:3000
 # Clerk 인증 (Frontend)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
 CLERK_SECRET_KEY=your_clerk_secret_key
+
+# Swagger UI Security
+SWAGGER_USER=id
+SWAGGER_PASSWORD=password
 ```
 
 ## ⚡ 빠른 시작 체크리스트
