@@ -75,78 +75,34 @@ def calculate_health_factor(state: ReportGenerationState, config: Dict[str, Any]
             }
             continue
         
-        # 1. 매출 성장률 점수 (0-1)
+        # 1. 매출 성장률 점수 (0-1) - 선형 변환: -10% ~ 20% 범위를 0.0 ~ 1.0으로
         revenue_growth = financials.get("revenue_growth", 0)
-        if revenue_growth >= 20:
-            revenue_growth_score = 1.0
-        elif revenue_growth >= 10:
-            revenue_growth_score = 0.8
-        elif revenue_growth >= 5:
-            revenue_growth_score = 0.6
-        elif revenue_growth >= 0:
-            revenue_growth_score = 0.4
-        elif revenue_growth >= -10:
-            revenue_growth_score = 0.2
-        else:
-            revenue_growth_score = 0.0
+        # -10% 이하면 0.0, 20% 이상이면 1.0, 그 사이는 선형 보간
+        revenue_growth_score = max(0.0, min(1.0, (revenue_growth + 10) / 30.0))
         
-        # 2. 수익성 점수 (영업이익률, 0-1)
+        # 2. 수익성 점수 (영업이익률, 0-1) - 선형 변환: 0% ~ 15% 범위를 0.0 ~ 1.0으로
         operating_margin = financials.get("operating_margin", 0)
-        if operating_margin >= 15:
-            profitability_score = 1.0
-        elif operating_margin >= 10:
-            profitability_score = 0.8
-        elif operating_margin >= 5:
-            profitability_score = 0.6
-        elif operating_margin >= 0:
-            profitability_score = 0.4
-        else:
-            profitability_score = 0.0
+        # 음수면 0.0, 15% 이상이면 1.0, 그 사이는 선형 보간
+        profitability_score = max(0.0, min(1.0, operating_margin / 15.0))
         
         # 3. 안정성 점수 (부채비율, 유동비율, 0-1)
         debt_ratio = financials.get("debt_ratio", 100)
         current_ratio = financials.get("current_ratio", 0)
         
-        # 부채비율 점수 (낮을수록 좋음)
-        if debt_ratio <= 30:
-            debt_score = 1.0
-        elif debt_ratio <= 50:
-            debt_score = 0.8
-        elif debt_ratio <= 70:
-            debt_score = 0.6
-        elif debt_ratio <= 100:
-            debt_score = 0.4
-        else:
-            debt_score = 0.2
+        # 부채비율 점수 (낮을수록 좋음) - 선형 변환: 30% 이하면 1.0, 100% 이상이면 0.0
+        # 30% ~ 100% 범위를 1.0 ~ 0.0으로 선형 변환
+        debt_score = max(0.0, min(1.0, (100 - debt_ratio) / 70.0))
         
-        # 유동비율 점수 (높을수록 좋음)
-        if current_ratio >= 2.0:
-            current_score = 1.0
-        elif current_ratio >= 1.5:
-            current_score = 0.8
-        elif current_ratio >= 1.0:
-            current_score = 0.6
-        elif current_ratio >= 0.5:
-            current_score = 0.4
-        else:
-            current_score = 0.2
+        # 유동비율 점수 (높을수록 좋음) - 선형 변환: 0 ~ 2.0 범위를 0.0 ~ 1.0으로
+        # 2.0 이상이면 1.0, 그 사이는 선형 보간
+        current_score = max(0.0, min(1.0, current_ratio / 2.0))
         
         stability_score = (debt_score * 0.6 + current_score * 0.4)
         
-        # 4. 수익성 추세 점수 (영업이익 성장률, 0-1)
+        # 4. 수익성 추세 점수 (영업이익 성장률, 0-1) - 선형 변환: -10% ~ 20% 범위를 0.0 ~ 1.0으로
         operating_profit_growth = financials.get("operating_profit_growth", 0)
-        if operating_profit_growth >= 20:
-            trend_score = 1.0
-        elif operating_profit_growth >= 10:
-            trend_score = 0.8
-        elif operating_profit_growth >= 5:
-            trend_score = 0.6
-        elif operating_profit_growth >= 0:
-            trend_score = 0.4
-        elif operating_profit_growth >= -10:
-            trend_score = 0.2
-        else:
-            trend_score = 0.0
+        # -10% 이하면 0.0, 20% 이상이면 1.0, 그 사이는 선형 보간
+        trend_score = max(0.0, min(1.0, (operating_profit_growth + 10) / 30.0))
         
         # 최종 health_factor 계산 (가중 평균)
         health_factor = (

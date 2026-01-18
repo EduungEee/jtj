@@ -393,7 +393,8 @@ def download_corpcode_xml() -> Optional[bytes]:
 
 def load_stock_to_dart_mapping() -> Dict[str, str]:
     """
-    corpCode.xml 파일을 파싱하여 stock_code -> dart_code 매핑 테이블을 생성합니다.
+    stock_code -> dart_code 매핑 테이블을 생성합니다.
+    먼저 로컬 CORPCODE_filtered.json 파일을 사용하고, 없으면 XML을 다운로드합니다.
     매핑 테이블은 모듈 레벨에서 캐싱됩니다.
     
     Returns:
@@ -407,7 +408,39 @@ def load_stock_to_dart_mapping() -> Dict[str, str]:
     
     print("📊 stock_code -> dart_code 매핑 테이블 생성 중...")
     
-    # XML 파일 다운로드
+    mapping = {}
+    
+    # 1. 먼저 로컬 JSON 파일 시도
+    json_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "stock_api",
+        "CORPCODE_filtered.json"
+    )
+    
+    if os.path.exists(json_path):
+        try:
+            print(f"📂 로컬 JSON 파일 사용: {json_path}")
+            with open(json_path, 'r', encoding='utf-8') as f:
+                companies = json.load(f)
+            
+            for company in companies:
+                corp_code = company.get("corp_code", "").strip()
+                stock_code = company.get("stock_code", "").strip()
+                
+                # stock_code가 비어있지 않고 6자리 숫자인 경우만 추가
+                if stock_code and len(stock_code) == 6 and stock_code.isdigit():
+                    if corp_code and len(corp_code) == 8:  # dart_code는 8자리
+                        mapping[stock_code] = corp_code
+            
+            _stock_to_dart_mapping = mapping
+            print(f"✅ JSON 파일에서 매핑 테이블 생성 완료: {len(mapping)}개 회사")
+            return _stock_to_dart_mapping
+            
+        except Exception as e:
+            print(f"⚠️  JSON 파일 로드 실패: {e}")
+            print("   XML 다운로드로 대체 시도...")
+    
+    # 2. JSON 파일이 없거나 실패한 경우 XML 다운로드
     xml_content = download_corpcode_xml()
     if not xml_content:
         print("⚠️  매핑 테이블 생성 실패: XML 파일을 다운로드할 수 없습니다.")
@@ -415,7 +448,6 @@ def load_stock_to_dart_mapping() -> Dict[str, str]:
         return _stock_to_dart_mapping
     
     # XML 파싱
-    mapping = {}
     try:
         root = ET.fromstring(xml_content)
         
@@ -433,7 +465,7 @@ def load_stock_to_dart_mapping() -> Dict[str, str]:
                         mapping[stock_code_text] = corp_code_text
         
         _stock_to_dart_mapping = mapping
-        print(f"✅ 매핑 테이블 생성 완료: {len(mapping)}개 회사")
+        print(f"✅ XML에서 매핑 테이블 생성 완료: {len(mapping)}개 회사")
         
     except ET.ParseError as e:
         print(f"⚠️  XML 파싱 실패: {e}")

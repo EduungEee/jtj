@@ -18,7 +18,8 @@ from app.graph.state import ReportGenerationState
 from app.services.dart_api import (
     get_financial_from_db,
     save_financial_to_db,
-    get_financial_statements_by_year
+    get_financial_statements_by_year,
+    get_dart_code_from_stock_code
 )
 
 
@@ -78,13 +79,19 @@ def fetch_financial_data(state: ReportGenerationState, config: Dict[str, Any] = 
         dart_code = company.get("dart_code")
         stock_name = company.get("stock_name", "알 수 없음")
         
-        if not dart_code:
-            print(f"⚠️  [{idx}/{len(all_companies)}] {stock_name} ({stock_code}): DART 코드 없음, 스킵")
-            continue
-        
         if not stock_code:
             print(f"⚠️  [{idx}/{len(all_companies)}] {stock_name}: 종목코드 없음, 스킵")
             continue
+        
+        # dart_code가 없으면 재시도하여 찾기
+        if not dart_code:
+            print(f"⚠️  [{idx}/{len(all_companies)}] {stock_name} ({stock_code}): DART 코드 없음, 재조회 시도...")
+            dart_code = get_dart_code_from_stock_code(stock_code)
+            if dart_code:
+                print(f"✅ [{idx}/{len(all_companies)}] {stock_name} ({stock_code}): DART 코드 조회 성공 ({dart_code})")
+            else:
+                print(f"⚠️  [{idx}/{len(all_companies)}] {stock_name} ({stock_code}): DART 코드를 찾을 수 없어 스킵")
+                continue
         
         try:
             financials = None
