@@ -138,6 +138,57 @@ async def run_daily_analysis():
         print(f"❌ 일일 분석 중 오류 발생: {e}")
         print(f"Traceback: {traceback.format_exc()}")
         print("=" * 60)
+
+
+async def delete_old_news_daily():
+    """
+    매일 새벽 4시에 실행되는 오래된 뉴스 삭제 작업.
+    DELETE /api/news/old API를 호출하여 30일 이상 지난 뉴스를 삭제합니다.
+    """
+    # 한국 시간대 설정
+    seoul_tz = pytz.timezone('Asia/Seoul')
+    now_kst = datetime.now(seoul_tz)
+    
+    try:
+        print("=" * 60)
+        print(f"🗑️ 오래된 뉴스 삭제 스케줄러 실행: {now_kst.strftime('%Y-%m-%d %H:%M:%S')} (KST)")
+        print("=" * 60)
+        
+        # API 엔드포인트 호출
+        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        delete_url = f"{api_url}/api/news/old"
+        
+        # Query 파라미터
+        params = {"days": 30}
+        
+        print(f"📡 API 호출: DELETE {delete_url}")
+        print(f"   파라미터: {params}")
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.delete(delete_url, params=params)
+            
+            if response.status_code == 200:
+                result = response.json()
+                deleted_count = result.get("deleted_count", 0)
+                print(f"✅ 오래된 뉴스 삭제 완료: {deleted_count}개 삭제됨")
+                print("=" * 60)
+                return result
+            else:
+                error_detail = response.text
+                print(f"❌ API 호출 실패: {response.status_code}")
+                print(f"응답: {error_detail}")
+                print("=" * 60)
+                raise Exception(f"API 호출 실패 ({response.status_code}): {error_detail}")
+        
+    except httpx.TimeoutException:
+        print("❌ API 호출 타임아웃 (1분 초과)")
+        print("=" * 60)
+        raise
+    except Exception as e:
+        import traceback
+        print(f"❌ 뉴스 삭제 중 오류 발생: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        print("=" * 60)
         raise
 
 
@@ -167,11 +218,23 @@ def start_scheduler():
         replace_existing=True
     )
     
+    # 매일 새벽 4시에 오래된 뉴스 삭제 실행
+    scheduler.add_job(
+        delete_old_news_daily,
+        trigger=CronTrigger(hour=4, minute=0, timezone='Asia/Seoul'),
+        id='daily_news_deletion',
+        name='오래된 뉴스 삭제',
+        replace_existing=True
+    )
+    
     scheduler.start()
     print("✅ 스케줄러가 시작되었습니다.")
     print("   - 매시간 정각(00분)에 뉴스 수집이 실행됩니다.")
+    print("   - 매일 04:00에 오래된 뉴스 삭제가 실행됩니다.")
     print("   - 매일 06:00에 일일 분석이 실행됩니다.")
 
+
+from apscheduler.triggers.cron import CronTrigger
 
 def stop_scheduler():
     """
