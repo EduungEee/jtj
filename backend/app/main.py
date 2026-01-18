@@ -2,9 +2,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import Depends, HTTPException, status
 from app.database import engine, Base
 from app.routers import health, analyze, reports, news, users
 from app.scheduler import start_scheduler, stop_scheduler
+import secrets
 import sys
 import os
 
@@ -16,7 +21,39 @@ from models import models
 from app.database import initialize_schema
 initialize_schema()
 
-app = FastAPI(title="Stock Analysis API", version="1.0.0")
+app = FastAPI(
+    title="Stock Analysis API",
+    version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
+)
+
+security = HTTPBasic()
+
+def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_username = os.getenv("SWAGGER_USER", "admin")
+    correct_password = os.getenv("SWAGGER_PASSWORD", "secret")
+    
+    # Use secrets.compare_digest for secure comparison to prevent timing attacks
+    is_correct_username = secrets.compare_digest(credentials.username, correct_username)
+    is_correct_password = secrets.compare_digest(credentials.password, correct_password)
+    
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+@app.get("/docs", include_in_schema=False)
+async def get_swagger_documentation(username: str = Depends(get_current_username)):
+    return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_open_api_endpoint(username: str = Depends(get_current_username)):
+    return get_openapi(title="Stock Analysis API", version="1.0.0", routes=app.routes)
 
 # 요청 검증 오류 핸들러
 @app.exception_handler(RequestValidationError)
