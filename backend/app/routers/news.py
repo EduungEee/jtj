@@ -249,3 +249,32 @@ async def get_news_count(
             detail=f"뉴스 개수 조회 중 오류 발생: {str(e)}"
         )
 
+
+@router.delete("/news/old", tags=["Admin"])
+async def delete_old_news_endpoint(
+    days: int = Query(default=30, ge=0, description="삭제할 기준일 (오늘로부터 days일 이전의 기사 삭제)"),
+    db: Session = Depends(get_db)
+):
+    """
+    오래된 뉴스 기사를 삭제합니다.
+    
+    - **days**: 삭제할 기준일 (기본값: 30일). 
+             오늘로부터 지정된 일수(days) 이전의 모든 기사가 삭제됩니다.
+    """
+    try:
+        from app.news import delete_old_news
+        
+        deleted_count = delete_old_news(db, days)
+        
+        return {
+            "message": f"{days}일 이상 지난 뉴스 {deleted_count}개가 삭제되었습니다.",
+            "deleted_count": deleted_count
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"뉴스 삭제 중 오류 발생: {str(e)}"
+        )
+
